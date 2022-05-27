@@ -293,7 +293,7 @@ int first_trough(std::vector<int> edge) {
 }
 
 Mat remove_solid_rows(cv::Mat& img) {
-    int top_edge, bottom_edge ;
+    // int top_edge, bottom_edge ;
 
     Mat img_reduced ;
     
