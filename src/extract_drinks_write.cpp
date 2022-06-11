@@ -5,7 +5,7 @@
     #include <opencv4/opencv2/imgcodecs.hpp>
 #else
     #include <opencv2/imgproc/imgproc.hpp>
-    #include <opencv2/imgproc/imgcodecs.hpp>
+    #include <opencv2/imgcodecs/imgcodecs.hpp>
 #endif
 
 using namespace::cv ;
