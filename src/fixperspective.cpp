@@ -18,7 +18,13 @@
 #include <libgen.h>
 
 #include "lines.hpp"
+
+#ifdef USE_GUI
+#include "fixperspective_display.hpp"
 #include "display.hpp"
+#endif
+
+
 
 //#define VERBOSE_MESSAGE(msg) if(cmdopt_verbose) { std::cout << msg ;}
 
@@ -26,23 +32,20 @@ using namespace cv ;
 
 /* local function declarations */
 int process_file(char *src_file, const char *dest_file) ;
-const bool is_zero_line(Vec4i l) ;
 Mat transform_perspective(Mat img, Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
 inline Mat transform_perspective(Mat img, const std::vector<Vec4i>lines_tblr) {
   return transform_perspective(img, lines_tblr[0], lines_tblr[1], lines_tblr[2], lines_tblr[3]) ;
 }
+std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 //Mat crop_orthogonal(Mat src) ;
-std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
+std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
 std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
-Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) ;
+Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) ;
 
 #ifdef USE_EXIV2
 bool copy_exif(std::string src_path, std::string dest_path) ;
 #endif
 
-#ifdef USE_GUI
-void plot_hough_and_bounds(Mat src_bgr, std::vector<Vec4i> hough_lines, std::vector<Vec4i> bounds_tblr) ;
-#endif
 //std::vector<Vec4i> button_strip_lines(Mat src_gray) ;
 //std::vector<int> histogram(std::vector<int> vals) ;
 //void draw_drink_separator_lines(Mat img, std::vector<int> runlengths, Point offset) ;
@@ -111,34 +114,30 @@ int main(int argc, char **argv) {
 	const char *opts =  "bcd:nv";
 
 	while((c = getopt(argc, argv, opts)) != -1) {
-	  switch(c) {
-	  case 'b':
-		cmdopt_batch = true ;
-		break;
-	  case 'c':
-		cmdopt_clip = true ;
-		break;
-	  case 'd':
-		cvalue = optarg ;
-		dest_dir = cvalue ;
-		break ;
-	  case 'n':
-		cmdopt_nowrite = true ;
-		break;
-	  case 'v' ://verbose
-		cmdopt_verbose = true ;
-		std::cout << "Verbose mode" << std::endl ;
-		break ;
-	  }
+		switch(c) {
+			case 'b':
+				cmdopt_batch = true ;
+				break;
+			case 'c':
+				cmdopt_clip = true ;
+				break;
+			case 'd':
+				cvalue = optarg ;
+				dest_dir = cvalue ;
+				break ;
+			case 'n':
+				cmdopt_nowrite = true ;
+				break;
+			case 'v' ://verbose
+				cmdopt_verbose = true ;
+				std::cout << "Verbose mode" << std::endl ;
+				break ;
+		}
 	}
 	
 	for (int idx = optind ; idx < argc ; idx++) {
 	char *filename ;
 	filename = argv[idx] ;
-	
-	if(cmdopt_verbose) {
-		std::cout << filename << std::endl ;
-	}
 	
 	std::stringstream dest_path ;
 	
@@ -151,67 +150,117 @@ int main(int argc, char **argv) {
 }
 
 int process_file(char *filename, const char *dest_file) {
-  // std::stringstream ss_filename ;
+	// std::stringstream ss_filename ;
 
-  // const auto filenamestr = std::string(basename(filename)) ;
-  // const auto lastindex = filenamestr.find_last_of(".") ;
-  // const auto fnoext = filenamestr.substr(0, lastindex) ;
-  // const auto filename_extension = filenamestr.substr(lastindex + 1) ;
+	// const auto filenamestr = std::string(basename(filename)) ;
+	// const auto lastindex = filenamestr.find_last_of(".") ;
+	// const auto fnoext = filenamestr.substr(0, lastindex) ;
+	// const auto filename_extension = filenamestr.substr(lastindex + 1) ;
+
+	auto src  = imread(filename, 1) ; //color
   
-  auto src  = imread(filename, 1) ; //color
-  
-  if(src.empty()) {
-	std::cerr << "Input file is empty: " << filename << std::endl ;
-  //help() ;
-	return -1 ;
+	if(src.empty()) {
+		std::cerr << "Input file is empty: " << filename << std::endl ;
+		return -1 ;
 	} else {
-	  if(cmdopt_verbose) {
+		if(cmdopt_verbose) {
 			std::cout << std::endl << "Read image file: " << filename << std::endl ;
 		}
 	}
 
-  if(!cmdopt_nowrite) {
-	std::cout << "Destination file:[" << dest_file << "]" << std::endl ;
-  }
-
-
   //convert to value or hue channel?
   //hue generally gives better results, but is weak if the machine is white.
-	Mat src_target, src_gray, src_hsv, canny ;
+	Mat img_val, img_hue, canny ;
 
-	cvtColor(src, src_gray, COLOR_BGR2GRAY) ;
-	cvtColor(src, src_hsv, COLOR_BGR2HSV) ;
+	cvtColor(src, img_val, COLOR_BGR2GRAY) ;
+	cvtColor(src, img_hue, COLOR_BGR2HSV) ;	//we will overwrite with just the hue channel
 
 	std::vector<Mat> hsv_planes;
-	split(src_hsv, hsv_planes );
-	Mat src_hue = hsv_planes[0] ;
+
+	split(img_hue, hsv_planes );
+	img_hue = hsv_planes[0] ;
 
 	Mat imgs[] = {
-		src_hue, 
-		src_gray
+		img_val, 
+		img_hue
 	} ;
 
-	bool is_bounding_lines_detected = false ;
-	auto scale = 1 ;
-	const auto SCALE_DOWN_MAX = 4 ;
 
 	// for(auto const img : imgs ) {
 
 	//Try to get the maximal quadrilateral bounds
 
-	Mat img_gray_reduced, img_color_reduced ;
-	img_gray_reduced = src_gray.clone() ;
+	//Mat img_gray_reduced, img_color_reduced ;
+	//img_gray_reduced = src_gray.clone() ;
 	//img_gray_reduced = Scalar(0, 0, 0) ;
+
+	if(cmdopt_verbose) { std::cout << "Trying to detect on hue" << std::endl ; }
+	auto bounding_lines_hue = detect_bounding_lines_iterate_scale(img_hue) ;
+	if(cmdopt_verbose) { std::cout << "Trying to detect on val" << std::endl ; }
+	auto bounding_lines_val = detect_bounding_lines_iterate_scale(img_val) ;
+
+	Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
+
+	#ifdef USE_GUI
+	if(!cmdopt_batch) {
+		std::string transformed_window_title = std::string("Corrected on value") ;
+		imshow(transformed_window_title, scale_for_display(transformed_image)) ;
+
+		//convert to color so we can draw in color on them
+		cvtColor(img_val, img_val, COLOR_GRAY2BGR) ;
+		cvtColor(img_hue, img_hue, COLOR_GRAY2BGR) ;
+		plot_bounds(img_hue, bounding_lines_hue, Scalar(255, 127, 200)) ;	//purple
+		plot_bounds(img_val, bounding_lines_val, Scalar(127, 200, 255)) ;	//orange
+		imshow("Purple: hue, Orange: value", scale_for_display(img_val)) ;
+		imshow("Hue", scale_for_display(img_hue)) ;
+		waitKey() ;
+	}
+	#endif
+
+	//TODO: move this out
+	if(!cmdopt_nowrite) {
+		if(cmdopt_verbose) {
+			std::cout << "Writing to:[" << dest_file << "]" << std::endl ;
+		}
+		try {
+			//imwrite(dest_file, transformed_image) ;
+			#ifdef USE_EXIV2
+			copy_exif(filename, dest_file) ;
+			#endif
+		} catch (std::runtime_error& ex) {
+		fprintf(stderr, "Could not write output file: %s\n", ex.what());
+			return 1;
+		}
+	}
+
+
+
+	return 0 ;
+}
+
+/**
+ * @brief Find the best bounding lines by detecting at successive scales.
+ * 
+ * @param img_src Source image
+ * @param bounding_lines Vector of lines to receive values
+ * @return std::vector<Vec4i> Vector of four lines. If any are empty, a set of four good bounding lines was not detected.
+ */
+std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) {
+	auto scale = 1 ;
+	const auto SCALE_DOWN_MAX = 4 ;
+	bool is_bounding_lines_detected = false ;
+	Mat img_working = img_src.clone() ;
+
 	std::vector<Vec4i> bounding_lines ;
 	
-
 	for(scale = 1 ; scale <= SCALE_DOWN_MAX ; scale *= 2) {
 		if(cmdopt_verbose) {
-			std::cout << "Trying scale " << scale << " for image size: " << img_gray_reduced.size() ;
+			std::cout << "Trying scale " << scale << " for image size: " << img_working.size() ;
 		}
 
-		bounding_lines = detect_bounding_lines(img_gray_reduced) ;
+		bounding_lines = detect_bounding_lines(img_working) ;
 
+		// A zero line (initial value for a Vec4i) indicates that no good lines were found for that one
 		is_bounding_lines_detected = std::none_of(bounding_lines.begin(),
 			bounding_lines.end(),
 			[](Vec4i lin) { return is_zero_line(lin) ;}) ;
@@ -228,74 +277,19 @@ int process_file(char *filename, const char *dest_file) {
 		}
 		
 		if(scale < SCALE_DOWN_MAX) {
-			pyrDown(img_gray_reduced, img_gray_reduced) ;
-		}
-	}
-	// }
-		
-	if(!is_bounding_lines_detected) {
-		std::cerr << filename << ": Failed to fix as bounding lines not detected" << std::endl ;
-		return -1 ;
-	}
-	
-	//scale the lines back up to full size so we can use them on the full size image
-	std::transform(bounding_lines.begin(), bounding_lines.end(), bounding_lines.begin(),
-		   [scale](Vec4i pt) -> Vec4i { return pt * scale ; }) ;
-	
-	Mat unwarped_image = transform_perspective(src, bounding_lines) ;
-	
-	/* Now detect vertical and horizontal lines
-
-	
-	*/
-	//try to detect bounds again, not on corrected image
-	/*
-	  bounding_lines = detect_bounding_lines(unwarped_image) ;
-	  
-	  is_bounding_lines_detected = std::none_of(bounding_lines.begin(),
-	  bounding_lines.end(),
-	  [](Vec4i lin) { return is_zero_line(lin) ;}) ;
-	  if (is_bounding_lines_detected) {
-	  std::cout << "Got bounds of persp-fixed image " << std::endl ;
-	  if(!cmdopt_batch) {
-	  plot_hough_and_bounds(unwarped_image, bounding_lines, bounding_lines) ;
-	  }
-	  } else {
-	  std::cout << "Bounding lines not detected in pers-fixed image " << std::endl ;
-	  }
-	*/
-
-	//TODO: move this out
-
-	if(!cmdopt_nowrite) {
-		if(cmdopt_verbose) {
-			std::cout << "Writing to:[" << dest_file << "]" << std::endl ;
-		}
-		try {
-			imwrite(dest_file, unwarped_image) ;
-			#ifdef USE_EXIV2
-			copy_exif(filename, dest_file) ;
-			#endif
-		} catch (std::runtime_error& ex) {
-		fprintf(stderr, "Could not write output file: %s\n", ex.what());
-			return 1;
+			pyrDown(img_working, img_working) ;
 		}
 	}
 
-	#ifdef USE_GUI
-	if(!cmdopt_batch) {
-		std::string unwarped_window_title = std::string("Unwarped and Cropped") ;
-		imshow(unwarped_window_title, scale_for_display(unwarped_image)) ;
+	if (is_bounding_lines_detected) {
+		//scale the lines back up to full size so we can use them on the full size image
+		std::transform(bounding_lines.begin(), bounding_lines.end(), bounding_lines.begin(),
+			[scale](Vec4i pt) -> Vec4i { return pt * scale ; }) ;
 
-		cvtColor(img_gray_reduced, img_color_reduced, COLOR_GRAY2BGR) ;
-		plot_hough_and_bounds(img_color_reduced, bounding_lines, bounding_lines) ;
-		imshow("Best at Hough on reduced image", scale_for_display(img_color_reduced)) ;
-
-		waitKey() ;
+		return bounding_lines ;
+	} else {
+		return std::vector<Vec4i>(4) ;
 	}
-	#endif
-
-	return 0 ;
 }
 
 #ifdef USE_EXIV2
@@ -331,34 +325,11 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 }
 #endif
 
-std::vector<int> run_length_midpoints (std::vector<int> rl) {
-	std::vector<int> rlmids ;
-	
-	rlmids.push_back(0) ;
-	
-	int total = rl[0] ;
-	
-	for(size_t i = 1 ; i < rl.size() ; i++) {
-	int run = rl[i] ;
-	int mid = total + (run / 2) ;
-	rlmids.push_back(mid) ;
-	total += run ;
-	}
-	return rlmids ;
-}
-
-/* Returns true if l is a zero-line: a degenerate line with all points zero 
-	@param l Line, Vec4i
-*/
-const bool is_zero_line(Vec4i l) {
-  return (l[0] == 0 && l[1] == 0 && l[2] == 0 && l[3] == 0) ;
-}
-
 /**/
 Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left_line, Vec4i right_line) {
 	//  std::cout << "Tranforming perspective" << std::endl ;
 
-	std::vector<Point2f> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
+	std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
 	std::vector<Point2f> dst_corners(4);
 	/*
 	  for(size_t i = 0 ; i < roi_corners.size() ; i++) {
@@ -497,7 +468,7 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	@param img Uncorrected source image
 	@param corrected_img image
 */
-Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) {
+Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) {
 	Mat trans = getPerspectiveTransform(detected_corners, dst_corners) ;
 
 	std::vector<Point2f> img_frame(4), transformed ;
@@ -528,39 +499,18 @@ Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected
 	}
 	return clip_frame ;
 }
-/*
-std::vector<Vec4i> orthogonal_lines(std::vector<Vec4i> lines, float max_slope) {
-  std::vector<Vec4i> result_lines ;
-  for(const auto &lin : lines) {
-	int x1 = lin[0] ;
-	int y1 = lin[1] ;
-	int x2 = lin[2] ;
-	int y2 = lin[3] ;
-
-	//std::cout << x1 << std::endl ;
-
-	float slope = normalized_slope(lin) ;
-
-	if(slope < max_slope) {
-	result_lines.push_back(lin) ;
-	}
-  }//end for loop through points
-
-  return result_lines ;
-}
-*/
 
 /**
-	Detect the maximum bounding significant hough lines
-
-	@param src Source image
-	@param hough_threshold For HoughLinesP
-*/
+ * @brief Detect the maximum bounding significant hough lines
+ * 
+ * @param src Source image
+ * @param hough_threshold For HoughLinesP
+ * @return std::vector<Vec4i> 
+ */
 std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
   std::vector<Vec4i> lines, ortho_lines, vertical_lines, horizontal_lines ;
 
-  //std::cout << "Trying to find bounds of image of size " << src.rows << ":" << src.cols << std::endl ;
-
+	//TODO: change return value to array<Vec4i, 4>
   //min length of Hough lines based on image size
   int min_vertical_length = src.rows / 4 ; //6
   int min_horizontal_length = src.cols / 6 ; //10
@@ -589,9 +539,11 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
 
 
   //now choose the outermost
+  //all the lines are initialized to [0, 0, 0, 0]
   Vec4i left_edge_line, right_edge_line, top_edge_line, bottom_edge_line ;
 
-  int left_edge = src.cols / 2 ;//initially centered
+	//initialize all the edges to the center
+  int left_edge = src.cols / 2 ;
   int right_edge = src.cols / 2 ;
   int top_edge = src.rows / 2 ;
   int bottom_edge = src.rows / 2 ;
@@ -636,57 +588,8 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
   bound_lines[2] = left_edge_line ;
   bound_lines[3] = right_edge_line ;
 
-  const char *labels[] = {
-	"Top", "Bottom", "Left", "Right"
-  } ;
-
-  for(unsigned int i = 0 ; i < bound_lines.size() ; i++) {
-  //    std::cout << labels[i] << ": " << bound_lines[i] << std::endl  ;
-  }
   return bound_lines ;
 }
-
-/**
-Detect the horizontal lines created by the button strips
-The button strip is distinctive because it is the most intense white and exactly horizontal with respect to
-the vending machine. Unfortunately, most button strips have a wavy top edge, which makes it difficult
-to detect as a line. Here we use standard Hough, not probabilistic, as it is easier to work with angles
-for selecting horizontal lines.
- **/
-
-/*
-std::vector<Vec4i> button_strip_lines(Mat src_gray) {
-  Mat thresh, canny ;
-  threshold(src_gray, thresh, 240, 255, THRESH_BINARY) ;
-  Canny(thresh, canny, 30, 450, 3) ;
-
-  std::vector<Vec2f> lines ;
-  std::vector<Vec4i> button_lines ;
-
-  //min length based on image size
-  int min_length = src_gray.cols / 4 ;
-
-  HoughLines(canny, lines, 1, CV_PI/180, 450) ;
-
-  const float theta_threshold = 0.01 * CV_PI ;
-
-  for(const auto lin : lines) {
-	float rho = lin[0] ;
-	float theta = lin[1] ;
-
-	//    float y_off = std::min(theta, float(CV_PI - theta)) ;
-	//theta is measured from the y-axis (vertical)
-	float x_axis_displacement = abs((CV_PI/2) - theta) ;
-
-	if(x_axis_displacement < theta_threshold) {
-	  Vec4i xyline = rt_to_pt(rho, theta, src_gray.cols) ;
-	  button_lines.push_back(xyline) ;
-	}
-  }
-  return button_lines ;
-}
-*/
-
 
 /* sort function for sorting horizontal line by y*/
 bool cmp_horizontal_line_y(Vec4i l1, Vec4i l2) {
@@ -696,29 +599,35 @@ bool cmp_horizontal_line_y(Vec4i l1, Vec4i l2) {
   return (mid1 < mid2) ;
 }
 
-void write_drink_rows(Mat src, std::vector<int> separators) {
+/**
+ * @brief Return the four points where the given four lines intersect.
+ * 
+ * @param top 
+ * @param bottom 
+ * @param left 
+ * @param right
+ * 
+ * @return std::array<Point2f, 4> TL, TR, BR, BL (clockwise from TL)
+ */
+std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) {
+	std::array<Point2f, 4> points ;
 
-}
+	Point2f p_tl = line_intersection(top, left) ;
+	Point2f p_tr = line_intersection(top, right) ;
+	Point2f p_bl = line_intersection(bottom, left) ;
+	Point2f p_br = line_intersection(bottom, right) ;
 
+	/*
+	points.push_back(p_tl) ;
+	points.push_back(p_tr) ;
+	points.push_back(p_br) ;
+	points.push_back(p_bl) ;
+	*/
 
-/*
-Input line order: top, bottom, left, right
-Output point ordr, TL, TR, BR, BL (clockwise from TL)
-*/
-std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) {
-  //std::cout << "line_corners" << std::endl ;
-  std::vector<Point2f> points ;
+	points[0] = p_tl ;
+	points[1] = p_tr ;
+	points[2] = p_br ;
+	points[3] = p_bl ;
 
-  Point2f p_tl = line_intersection(top, left) ;
-  Point2f p_tr = line_intersection(top, right) ;
-  Point2f p_bl = line_intersection(bottom, left) ;
-  Point2f p_br = line_intersection(bottom, right) ;
-
-  points.push_back(p_tl) ;
-  points.push_back(p_tr) ;
-  points.push_back(p_br) ;
-  points.push_back(p_bl) ;
-  //std::cout << "Top left returned by line_intersection()" << p_tl << std::endl ;
-  //std::cout << "Top right returned by line_intersection()" << p_tr << std::endl ;
-  return points ;
+	return points ;
 }

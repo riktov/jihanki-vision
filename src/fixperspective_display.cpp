@@ -11,7 +11,6 @@ batch-processing program as run on a server
     #include <opencv2/imgproc/imgproc.hpp>
 #endif
 
-
 using namespace cv ;
 
 #include <iostream>
@@ -19,15 +18,26 @@ using namespace cv ;
 #include "display.hpp"
 #include "lines.hpp"
 
-void plot_hough_and_bounds(Mat img, std::vector<Vec4i> hough_lines, std::vector<Vec4i> bounds_tblr) {
+/**
+ * @brief Draw the bounding line segments, and the full quadrilateral made be extending those segments
+ * 
+ * @param img Source image which will be drawn on
+ * @param bounds_tblr vector of 4 points
+ * @param rect_color color for the quadrilateral
+ */
+void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
 	Vec4i top_line = bounds_tblr[0] ;
 	Vec4i bottom_line = bounds_tblr[1] ;
 	Vec4i left_line = bounds_tblr[2] ;
 	Vec4i right_line = bounds_tblr[3] ;
 
-	for(const auto &lin : hough_lines) {
-		draw_line(img, lin, Scalar(127, 200, 127), 3) ;
-	}
+	if (std::any_of(bounds_tblr.begin(), bounds_tblr.end(),
+		[](Vec4i l){
+			return is_zero_line(l) ;
+		})) {
+			std::cout << "Zero line in bounds, bailing" << std::endl ;
+			return ;
+		}
 
 	int line_thickness = 24 ;
 
@@ -38,6 +48,7 @@ void plot_hough_and_bounds(Mat img, std::vector<Vec4i> hough_lines, std::vector<
 		std::make_pair(bottom_line, Scalar(255, 0, 255))
 	} ;
 
+	std::cout << "plot_bounds() " << std::endl ;
 	for(auto l_c : lines_and_colors) {
 		draw_line(img, l_c.first, l_c.second, line_thickness) ;
 		std::cout << l_c.first << std::endl ;
@@ -55,7 +66,7 @@ void plot_hough_and_bounds(Mat img, std::vector<Vec4i> hough_lines, std::vector<
 	Point2f pt_prev = pt_bl ;
 
 	Scalar col_corner = Scalar(255, 255, 0) ;
-	Scalar col_edge = Scalar(255, 63, 127) ;
+	Scalar col_edge = rect_color ;//Scalar(255, 63, 127) ;
 	for(auto pt : corners) {
 		circle(img, pt, 10, col_corner, 4) ;
 		line(img, pt_prev, pt, col_edge, 8) ;

@@ -16,6 +16,8 @@ inline bool is_vertical(cv::Vec4i lin, int max_dx) {
   return is_vertical(lin[0], lin[1], lin[2], lin[3], max_dx) ;
 }
 
+bool is_zero_line(const cv::Vec4i l) ;
+
 float normalized_slope(cv::Vec4i line) ;
 
 cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) ;

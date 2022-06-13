@@ -92,7 +92,7 @@ cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) {
 
   //  std::cout << __FILE__ << ":" << __LINE__ << std::endl ;
   if(l1x1 == l1x2) {//l1 is vertical
-    std::cout << "l1 is vertical." << std::endl ;
+    std::cout << "line_intersection(): l1 is vertical." << std::endl ;
     float x = float(l1x1) ;
 
     float m2 = (l2y2 - l2y1) / (l2x2 - l2x1) ;
@@ -107,7 +107,7 @@ cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) {
 
   //std::cout << __FILE__ << ":" << __LINE__ << std::endl ;
   if(l2x1 == l2x2) {//l2 is vertical
-    //std::cout << "l2 is vertical." << std::endl ;
+    std::cout << "l2 is vertical." << std::endl ;
     float x = float(l2x1) ;
 
     float m1 = (l1y2 - l1y1) / (l1x2 - l1x1) ;
@@ -124,17 +124,11 @@ cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) {
 
   }
 
-  
-  //std::cout << __FILE__ << ":" << __LINE__ << std::endl ;
   float m1 = float(l1y2 - l1y1) / (l1x2 - l1x1) ;
   float m2 = float(l2y2 - l2y1) / (l2x2 - l2x1) ;
-  // std::cout << "m1:" << m1 << std::endl ;
-  // std::cout << "m2:" << m2 << std::endl ;
+
   float b1 = y_intercept(l1) ;
   float b2 = y_intercept(l2) ;
-
-  // std::cout << "b1:" << b1 << std::endl ;
-  // std::cout << "b2:" << b2 << std::endl ;
 
   float x = (b2 - b1) / (m1 - m2) ;
   float y = (m1 * x) + b1 ;
@@ -162,4 +156,40 @@ cv::Vec4i rt_to_pt(float rho, float theta, double alpha) {
 
   cv::Vec4i xyline = cv::Vec4i(pt1.x, pt1.y, pt2.x, pt2.y) ;
   return xyline ;
+}
+
+
+/**
+ * @brief Is the line a zero-line: a degenerate line with all points zero
+ * 
+ * @param l A line
+ * @return true Line is a zero-line
+ * @return false Line is not zero-line
+ */
+bool is_zero_line(const cv::Vec4i l) {
+  return (l[0] == 0 && l[1] == 0 && l[2] == 0 && l[3] == 0) ;
+}
+
+bool is_edge_line(cv::Mat img, cv::Vec4i l) {
+  if (l[0] == 0 && l[2] == 0) { //left
+    return true ;
+  }
+
+  if (l[1] == 0 && l[3] == 0) { //top
+    return true ;
+  }
+
+  auto right_edge_col = img.cols - 1  ;
+ 
+  if (l[0] == right_edge_col && l[2] == right_edge_col) { //left
+    return true ;
+  }
+
+  auto bot_edge_col = img.rows - 1 ;
+ 
+  if (l[0] == bot_edge_col && l[2] == bot_edge_col) { //bottom
+    return true ;
+  }
+
+  return false ;
 }
