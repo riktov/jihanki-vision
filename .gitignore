@@ -9,12 +9,10 @@ test
 .vscode
 .kdev4
 *.kdev4
-build*/
 GPATH
 GRTAGS
 GTAGS
 tags
 *.JPG
 *.jpeg
-
 build*/*
