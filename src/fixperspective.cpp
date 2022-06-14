@@ -515,10 +515,10 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
 
 	//TODO: change return value to array<Vec4i, 4>
   //min length of Hough lines based on image size
-  int min_vertical_length = src.rows / 4 ; //6
-  int min_horizontal_length = src.cols / 6 ; //10
-  int min_length = min(min_vertical_length, min_horizontal_length) ;
-  int max_gap = 70 ; //100
+  const int min_vertical_length = src.rows / 4 ; //6
+  const int min_horizontal_length = src.cols / 6 ; //10
+  const int min_length = min(min_vertical_length, min_horizontal_length) ;
+  const int max_gap = 70 ; //100
 
   //canny parameters optimized for jihanki images?
   // last three are thresh1, thresh2, sobel_aperture
