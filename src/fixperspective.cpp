@@ -185,6 +185,7 @@ int process_file(char *filename, const char *dest_file) {
 		img_hue
 	} ;
 
+	blur(img_hue, img_hue, Size(3, 3));
 
 	// for(auto const img : imgs ) {
 
@@ -199,11 +200,12 @@ int process_file(char *filename, const char *dest_file) {
 	if(cmdopt_verbose) { std::cout << "Trying to detect on val" << std::endl ; }
 	auto bounding_lines_val = detect_bounding_lines_iterate_scale(img_val) ;
 
-	Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
+	Mat transformed_image = transform_perspective(src, bounding_lines_hue) ;
+	// Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
-		std::string transformed_window_title = std::string("Corrected on value") ;
+		std::string transformed_window_title = std::string("Corrected on hue") ;
 		imshow(transformed_window_title, scale_for_display(transformed_image)) ;
 
 		//convert to color so we can draw in color on them
@@ -211,8 +213,8 @@ int process_file(char *filename, const char *dest_file) {
 		cvtColor(img_hue, img_hue, COLOR_GRAY2BGR) ;
 		plot_bounds(img_hue, bounding_lines_hue, Scalar(255, 127, 200)) ;	//purple
 		plot_bounds(img_val, bounding_lines_val, Scalar(127, 200, 255)) ;	//orange
-		imshow("Purple: hue, Orange: value", scale_for_display(img_val)) ;
-		imshow("Hue", scale_for_display(img_hue)) ;
+		imshow("Value (orange)", scale_for_display(img_val)) ;
+		imshow("Hue (purple)" , scale_for_display(img_hue)) ;
 		waitKey() ;
 	}
 	#endif
@@ -329,7 +331,8 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left_line, Vec4i right_line) {
 	//  std::cout << "Tranforming perspective" << std::endl ;
 
-	std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
+	// std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
+	auto roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
 	std::vector<Point2f> dst_corners(4);
 	/*
 	  for(size_t i = 0 ; i < roi_corners.size() ; i++) {
@@ -358,10 +361,10 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	  Or we could fill those in with a key color like magenta
 	*/
 	//These are unit-length segments, we just need to calculate the intercection.
-	auto left_edge = Vec4i(0, 0, 0, 1) ;
-	auto right_edge = Vec4i(img.cols, 0, img.cols, 1) ;
-	auto top_edge = Vec4i(0, 0, 1, 0) ;
-	// auto bottom_edge = Vec4i(0, img.rows, 1, img.rows) ;
+	//auto left_edge = Vec4i(0, 0, 0, 1) ;
+	//auto right_edge = Vec4i(img.cols, 0, img.cols, 1) ;
+	//auto top_edge = Vec4i(0, 0, 1, 0) ;
+	//auto bottom_edge = Vec4i(0, img.rows, 1, img.rows) ;
 	
 	// Point2f top_line_left_intercept  = line_intersection(top_line, left_edge) ;
 	// Point2f top_line_right_intercept = line_intersection(top_line, right_edge) ;
@@ -372,10 +375,10 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	// Point2f bottom_line_left_intercept  = line_intersection(bottom_line, left_edge) ;
 	// Point2f bottom_line_right_intercept = line_intersection(bottom_line, right_edge) ;
 	
-	Point2f pt_tl = line_intersection(top_line, left_line) ;
-	Point2f pt_tr = line_intersection(top_line, right_line) ;
-	Point2f pt_br = line_intersection(bottom_line, right_line) ;
-	Point2f pt_bl = line_intersection(bottom_line, left_line) ;
+	auto pt_tl = line_intersection(top_line, left_line) ;
+	auto pt_tr = line_intersection(top_line, right_line) ;
+	auto pt_br = line_intersection(bottom_line, right_line) ;
+	auto pt_bl = line_intersection(bottom_line, left_line) ;
 	
 	// float top_left_margin = line_length(top_line_left_intercept, pt_tl) ;
 	float left_margin, top_margin, right_margin, bottom_margin ;
@@ -548,22 +551,22 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
   int top_edge = src.rows / 2 ;
   int bottom_edge = src.rows / 2 ;
 
-  //right edge is a bit farther in, because some machines have a greater inset on the right side
-  int left_edge_max = src.cols / 2 ; //6
-  int right_edge_min = src.cols - left_edge_max ;
-  //  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
+	//right edge is a bit farther in, because some machines have a greater inset on the right side
+	int left_edge_max = src.cols / 2 ; //6
+	int right_edge_min = src.cols - left_edge_max ;
+	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
 
-  for(const auto &vlin : vertical_lines) {
-	int mid_x = (vlin[0] + vlin[2]) / 2 ;
-	if(mid_x < left_edge && mid_x < left_edge_max) {
-	left_edge_line = vlin ;
-	left_edge = mid_x ;
+	for(const auto &vlin : vertical_lines) {
+		int mid_x = (vlin[0] + vlin[2]) / 2 ;
+		if(mid_x < left_edge && mid_x < left_edge_max) {
+			left_edge_line = vlin ;
+			left_edge = mid_x ;
+		}
+		if(mid_x > right_edge && mid_x > right_edge_min) {
+			right_edge_line = vlin ;
+			right_edge = mid_x ;
+		}
 	}
-	if(mid_x > right_edge && mid_x > right_edge_min) {
-	right_edge_line = vlin ;
-	right_edge = mid_x ;
-	}
-  }
 
   //  const int top_edge_max = src.rows / 4 ;
   //const int bottom_edge_min = src.rows - top_edge_max ;
@@ -581,6 +584,28 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
 	  bottom_edge = mid_y ;
 	}
   }
+
+
+	/* doing it functionally:
+	collect all lines left of left_edge_max, take the lefmost
+	use std::max_element
+	*/
+	std::vector<Vec4i> lines_left_half, lines_right_half, lines_top_half, lines_bottom_half ;
+
+	//collect all vertical lines in the left half
+	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_left_half), 
+		[left_edge](Vec4i lin){ return ((lin[0] + lin[2]) / 2) < left_edge ; }) ; 
+
+	//collect all vertical lines in the right half
+	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_right_half), 
+		[left_edge](Vec4i lin){ return ((lin[0] + lin[2]) / 2) >= left_edge ; }) ; 
+
+
+	auto leftmost = std::min_element(lines_left_half.begin(), lines_left_half.end(), 
+		[](Vec4i l1, Vec4i l2){
+			return ((l1[0] + l1[2]) / 2) < ((l2[0] + l2[2]) / 2) ;
+		}) ;
+
 
   std::vector<Vec4i> bound_lines(4) ;
   bound_lines[0] = top_edge_line ;
