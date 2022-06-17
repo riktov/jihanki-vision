@@ -25,7 +25,7 @@ using namespace cv ;
  * @param bounds_tblr vector of 4 points
  * @param rect_color color for the quadrilateral
  */
-void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
+void plot_bounds(Mat img, std::array<Vec4i, 4> bounds_tblr, Scalar rect_color) {
 	Vec4i top_line = bounds_tblr[0] ;
 	Vec4i bottom_line = bounds_tblr[1] ;
 	Vec4i left_line = bounds_tblr[2] ;

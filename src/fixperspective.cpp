@@ -33,13 +33,13 @@ using namespace cv ;
 /* local function declarations */
 int process_file(char *src_file, const char *dest_file) ;
 Mat transform_perspective(Mat img, Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
-inline Mat transform_perspective(Mat img, const std::vector<Vec4i>lines_tblr) {
+inline Mat transform_perspective(Mat img, const std::array<Vec4i, 4>lines_tblr) {
   return transform_perspective(img, lines_tblr[0], lines_tblr[1], lines_tblr[2], lines_tblr[3]) ;
 }
-std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 //Mat crop_orthogonal(Mat src) ;
 std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
-std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
+std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
+std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) ;
 
 #ifdef USE_EXIV2
@@ -247,13 +247,13 @@ int process_file(char *filename, const char *dest_file) {
  * @param bounding_lines Vector of lines to receive values
  * @return std::vector<Vec4i> Vector of four lines. If any are empty, a set of four good bounding lines was not detected.
  */
-std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) {
+std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) {
 	auto scale = 1 ;
 	const auto SCALE_DOWN_MAX = 4 ;
 	bool is_bounding_lines_detected = false ;
 	Mat img_working = img_src.clone() ;
 
-	std::vector<Vec4i> bounding_lines ;
+	std::array<Vec4i, 4> bounding_lines ;
 	
 	for(scale = 1 ; scale <= SCALE_DOWN_MAX ; scale *= 2) {
 		if(cmdopt_verbose) {
@@ -290,7 +290,8 @@ std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) {
 
 		return bounding_lines ;
 	} else {
-		return std::vector<Vec4i>(4) ;
+		Vec4i v ;
+		return std::array<Vec4i, 4> {{v, v, v, v}} ;
 	}
 }
 
@@ -513,7 +514,7 @@ Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detect
  * @param hough_threshold For HoughLinesP
  * @return std::vector<Vec4i> 
  */
-std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
+std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
   std::vector<Vec4i> lines, ortho_lines, vertical_lines, horizontal_lines ;
 
 	//TODO: change return value to array<Vec4i, 4>
@@ -549,16 +550,17 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
   Vec4i left_edge_line, right_edge_line, top_edge_line, bottom_edge_line ;
 
 	//initialize all the edges to the center
-  int left_edge = src.cols / 2 ;
-  int right_edge = src.cols / 2 ;
-  int top_edge = src.rows / 2 ;
-  int bottom_edge = src.rows / 2 ;
+	int left_edge = src.cols / 2 ;
+	int right_edge = src.cols / 2 ;
+	int top_edge = src.rows / 2 ;
+	int bottom_edge = src.rows / 2 ;
 
 	//right edge is a bit farther in, because some machines have a greater inset on the right side
 	int left_edge_max = src.cols / 2 ; //6
 	int right_edge_min = src.cols - left_edge_max ;
 	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
 
+	/*
 	for(const auto &vlin : vertical_lines) {
 		int mid_x = (vlin[0] + vlin[2]) / 2 ;
 		if(mid_x < left_edge && mid_x < left_edge_max) {
@@ -571,52 +573,64 @@ std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
 		}
 	}
 
-  //  const int top_edge_max = src.rows / 4 ;
-  //const int bottom_edge_min = src.rows - top_edge_max ;
-  const int top_edge_max = src.rows / 2 ;
-  const int bottom_edge_min = src.rows - top_edge_max ;
+	const int top_edge_max = src.rows / 2 ;
+	const int bottom_edge_min = src.rows - top_edge_max ;
 
-  for(const auto &hlin : horizontal_lines) {
-	int mid_y = (hlin[1] + hlin[3]) / 2 ;
-	if(mid_y < top_edge && mid_y < top_edge_max) {
-	  top_edge_line = hlin ;
-	  top_edge = mid_y ;
+	for(const auto &hlin : horizontal_lines) {
+		int mid_y = (hlin[1] + hlin[3]) / 2 ;
+		if(mid_y < top_edge && mid_y < top_edge_max) {
+			top_edge_line = hlin ;
+			top_edge = mid_y ;
+		}
+		if(mid_y > bottom_edge && mid_y > bottom_edge_min) {
+			bottom_edge_line = hlin ;
+			bottom_edge = mid_y ;
+		}
 	}
-	if(mid_y > bottom_edge && mid_y > bottom_edge_min) {
-	  bottom_edge_line = hlin ;
-	  bottom_edge = mid_y ;
-	}
-  }
-
+	*/
 
 	/* doing it functionally:
-	collect all lines left of left_edge_max, take the lefmost
-	use std::max_element
 	*/
-	std::vector<Vec4i> lines_left_half, lines_right_half, lines_top_half, lines_bottom_half ;
+
+	/* std::vector<Vec4i> lines_left_half, lines_right_half, lines_top_half, lines_bottom_half ;
+
+	int width_center = src.cols / 2 ;
+	int height_center = src.rows / 2 ;
 
 	//collect all vertical lines in the left half
 	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_left_half), 
-		[left_edge](Vec4i lin){ return ((lin[0] + lin[2]) / 2) < left_edge ; }) ; 
+		[width_center](Vec4i lin){ return ((lin[0] + lin[2]) / 2) < width_center ; }) ; 
 
 	//collect all vertical lines in the right half
 	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_right_half), 
-		[left_edge](Vec4i lin){ return ((lin[0] + lin[2]) / 2) >= left_edge ; }) ; 
+		[width_center](Vec4i lin){ return ((lin[0] + lin[2]) / 2) >= width_center ; }) ; 
+	*/
 
-
-	auto leftmost = std::min_element(lines_left_half.begin(), lines_left_half.end(), 
+	//get the min and max (leftmost, rightmost) line by centerpoint
+	auto vert_lines_iter = std::minmax_element(vertical_lines.begin(), vertical_lines.end(), 
 		[](Vec4i l1, Vec4i l2){
 			return ((l1[0] + l1[2]) / 2) < ((l2[0] + l2[2]) / 2) ;
 		}) ;
+	
+	left_edge_line  = vertical_lines[std::distance(vertical_lines.begin(), vert_lines_iter.first)] ;
+	right_edge_line = vertical_lines[std::distance(vertical_lines.begin(), vert_lines_iter.second)] ;
 
+	//get the min and max (topmost, bottommost) line by centerpoint
+	auto horiz_lines_iter = std::minmax_element(horizontal_lines.begin(), horizontal_lines.end(), 
+		[](Vec4i l1, Vec4i l2){
+			return ((l1[1] + l1[3]) / 2) < ((l2[1] + l2[3]) / 2) ;
+		}) ;
+	
+	top_edge_line    = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.first)] ;
+	bottom_edge_line = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.second)] ;
 
-  std::vector<Vec4i> bound_lines(4) ;
-  bound_lines[0] = top_edge_line ;
-  bound_lines[1] = bottom_edge_line ;
-  bound_lines[2] = left_edge_line ;
-  bound_lines[3] = right_edge_line ;
+	std::array<Vec4i, 4> bound_lines ;
+	bound_lines[0] = top_edge_line ;
+	bound_lines[1] = bottom_edge_line ;
+	bound_lines[2] = left_edge_line ;
+	bound_lines[3] = right_edge_line ;
 
-  return bound_lines ;
+	return bound_lines ;
 }
 
 /* sort function for sorting horizontal line by y*/
@@ -635,27 +649,15 @@ bool cmp_horizontal_line_y(Vec4i l1, Vec4i l2) {
  * @param left 
  * @param right
  * 
- * @return std::array<Point2f, 4> TL, TR, BR, BL (clockwise from TL)
+ * @return std::array<Point2f, 4> TL, TR, BR, BR - clockwise from TL
  */
 std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) {
 	std::array<Point2f, 4> points ;
 
-	Point2f p_tl = line_intersection(top, left) ;
-	Point2f p_tr = line_intersection(top, right) ;
-	Point2f p_bl = line_intersection(bottom, left) ;
-	Point2f p_br = line_intersection(bottom, right) ;
-
-	/*
-	points.push_back(p_tl) ;
-	points.push_back(p_tr) ;
-	points.push_back(p_br) ;
-	points.push_back(p_bl) ;
-	*/
-
-	points[0] = p_tl ;
-	points[1] = p_tr ;
-	points[2] = p_br ;
-	points[3] = p_bl ;
+	points[0] = line_intersection(top, left) ;
+	points[1] = line_intersection(top, right) ;
+	points[2] = line_intersection(bottom, right) ;
+	points[3] = line_intersection(bottom, left) ;
 
 	return points ;
 }
