@@ -41,6 +41,8 @@ std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i r
 std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
 std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) ;
+std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) ;
+std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) ;
 
 #ifdef USE_EXIV2
 bool copy_exif(std::string src_path, std::string dest_path) ;
@@ -252,6 +254,8 @@ std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) {
 	const auto SCALE_DOWN_MAX = 4 ;
 	bool is_bounding_lines_detected = false ;
 	Mat img_working = img_src.clone() ;
+
+	std::cout << "detect_bounding_lines_iterate_scale" << std::endl ;
 
 	std::array<Vec4i, 4> bounding_lines ;
 	
@@ -468,12 +472,16 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	return corrected_image ;
 }
 
-/* Calculate the rectangle which would contain only image areas, no filled background
+/**
+ * @brief Calculate the rectangle which would contain only image areas, no filled background
 	This is used to clip out the blank (outside of the image) margins.
-
-	@param img Uncorrected source image
-	@param corrected_img image
-*/
+ * 
+ * @param img Uncorrected source image
+ * @param corrected_img 
+ * @param detected_corners 
+ * @param dst_corners 
+ * @return Rect 
+ */
 Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) {
 	std::vector<Point2f> corners_v(detected_corners.begin(), detected_corners.end()) ;
 	Mat trans = getPerspectiveTransform(corners_v, dst_corners) ;
@@ -515,49 +523,63 @@ Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detect
  * @return std::vector<Vec4i> 
  */
 std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
-  std::vector<Vec4i> lines, ortho_lines, vertical_lines, horizontal_lines ;
+	std::vector<Vec4i> lines, vertical_lines, horizontal_lines ;
 
 	//TODO: change return value to array<Vec4i, 4>
-  //min length of Hough lines based on image size
-  const int min_vertical_length = src.rows / 4 ; //6
-  const int min_horizontal_length = src.cols / 6 ; //10
-  const int min_length = min(min_vertical_length, min_horizontal_length) ;
-  const int max_gap = 70 ; //100
+	//min length of Hough lines based on image size
+	const int min_vertical_length = src.rows / 4 ; //6
+	const int min_horizontal_length = src.cols / 6 ; //10
+	const int min_length = min(min_vertical_length, min_horizontal_length) ;
+	const int max_gap = 70 ; //100
 
-  //canny parameters optimized for jihanki images?
-  // last three are thresh1, thresh2, sobel_aperture
+	//canny parameters optimized for jihanki images?
+	// last three are thresh1, thresh2, sobel_aperture
 
-  Mat cann ;
+	Mat cann ;
 
-  Canny(src, cann, 30, 450, 3) ;
-  HoughLinesP(cann, lines, 1, CV_PI/180, hough_threshold * 3, min_length, max_gap) ;
+	Canny(src, cann, 30, 450, 3) ;
+	HoughLinesP(cann, lines, 1, CV_PI/180, hough_threshold * 3, min_length, max_gap) ;
 
-  //collect the ortho lines from those lines
-  copy_if(lines.begin(), lines.end(), back_inserter(ortho_lines),
-	  [](const Vec4i lin) { return normalized_slope(lin) < 0.1 ; }) ;
+	// copy_if(lines.begin(), lines.end(), back_inserter(ortho_lines),
+		// [](const Vec4i lin) { return normalized_slope(lin) < 0.1 ; }) ;
 
-  //collect the vertical lines from the ortho lines
-  copy_if(ortho_lines.begin(), ortho_lines.end(), back_inserter(vertical_lines),
-	  [](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
+	//remove diagonal lines
+	std::remove_if(lines.begin(), lines.end(),
+		[](Vec4i lin){ return normalized_slope(lin) > 0.1 ; }) ;
 
-  //collect the vertical lines from the ortho lines
-  copy_if(ortho_lines.begin(), ortho_lines.end(), back_inserter(horizontal_lines),
-	  [](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
+	//collect the vertical lines from the ortho lines
+	std::copy_if(lines.begin(), lines.end(), back_inserter(vertical_lines),
+		[](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
+
+	//then remove lines near the center. We are aiming for the machine cabinet edges or the display window edges
+	//Some machines have a greater inset on the right side to the display window.
+	int left_margin = src.cols / 6 ;
+	int right_margin = src.cols - left_margin ;
+
+	std::remove_if(vertical_lines.begin(), vertical_lines.end(),
+		[left_margin, right_margin](const Vec4i lin){ return mid_x(lin) > left_margin && mid_x(lin) < right_margin ; }) ;
+
+	//collect the horizontal lines from the ortho lines
+	std::copy_if(lines.begin(), lines.end(), back_inserter(horizontal_lines),
+		[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
+
+	//remove lines near the center. 
+	int top_margin = src.rows / 6 ;
+	int bottom_margin = src.cols - left_margin ;
+
+	std::remove_if(horizontal_lines.begin(), horizontal_lines.end(),
+		[top_margin, bottom_margin](const Vec4i lin){ return mid_y(lin) > top_margin && mid_y(lin) < bottom_margin ; }) ;
 
 
-  //now choose the outermost
-  //all the lines are initialized to [0, 0, 0, 0]
-  Vec4i left_edge_line, right_edge_line, top_edge_line, bottom_edge_line ;
+
+	//now choose the outermost
+	//all the lines are initialized to [0, 0, 0, 0]
+	Vec4i top_edge_line, bottom_edge_line ;
 
 	//initialize all the edges to the center
-	int left_edge = src.cols / 2 ;
-	int right_edge = src.cols / 2 ;
 	int top_edge = src.rows / 2 ;
 	int bottom_edge = src.rows / 2 ;
 
-	//right edge is a bit farther in, because some machines have a greater inset on the right side
-	int left_edge_max = src.cols / 2 ; //6
-	int right_edge_min = src.cols - left_edge_max ;
 	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
 
 	/*
@@ -606,14 +628,18 @@ std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
 		[width_center](Vec4i lin){ return ((lin[0] + lin[2]) / 2) >= width_center ; }) ; 
 	*/
 
-	//get the min and max (leftmost, rightmost) line by centerpoint
-	auto vert_lines_iter = std::minmax_element(vertical_lines.begin(), vertical_lines.end(), 
-		[](Vec4i l1, Vec4i l2){
-			return ((l1[0] + l1[2]) / 2) < ((l2[0] + l2[2]) / 2) ;
-		}) ;
+	std::cout << "gathering outermost" << std::endl ;
 	
-	left_edge_line  = vertical_lines[std::distance(vertical_lines.begin(), vert_lines_iter.first)] ;
-	right_edge_line = vertical_lines[std::distance(vertical_lines.begin(), vert_lines_iter.second)] ;
+	//first we should remove lines that are too close to the center
+
+	int inner_limit_left = src.rows / 6 ;
+	int inner_limit_right = src.rows - inner_limit_left ;
+
+	std::remove_if(vertical_lines.begin(), vertical_lines.end(),
+		[inner_limit_left, inner_limit_right](Vec4i lin){
+			return mid_x(lin) > inner_limit_left && mid_x(lin) < inner_limit_right ; 
+		}) ;
+	auto left_and_right = leftmost_rightmost_lines(vertical_lines) ;
 
 	//get the min and max (topmost, bottommost) line by centerpoint
 	auto horiz_lines_iter = std::minmax_element(horizontal_lines.begin(), horizontal_lines.end(), 
@@ -627,8 +653,8 @@ std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
 	std::array<Vec4i, 4> bound_lines ;
 	bound_lines[0] = top_edge_line ;
 	bound_lines[1] = bottom_edge_line ;
-	bound_lines[2] = left_edge_line ;
-	bound_lines[3] = right_edge_line ;
+	bound_lines[2] = left_and_right.first ;
+	bound_lines[3] = left_and_right.second ;
 
 	return bound_lines ;
 }
@@ -660,4 +686,82 @@ std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i r
 	points[3] = line_intersection(bottom, left) ;
 
 	return points ;
+}
+
+std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) {
+	//get the min and max (leftmost, rightmost) line by midpoint
+	auto lines_iter = std::minmax_element(lines.begin(), lines.end(), 
+		[](Vec4i l1, Vec4i l2){	return (mid_x(l1) < mid_x(l2)) ; }) ;
+	
+	auto leftmost  = lines[std::distance(lines.begin(), lines_iter.first)] ;
+	auto rightmost = lines[std::distance(lines.begin(), lines_iter.second)] ;
+
+	return std::make_pair(leftmost, rightmost) ;
+}
+
+std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) {
+	//get the min and max (leftmost, rightmost) line by centerpoint
+	auto lines_iter = std::minmax_element(lines.begin(), lines.end(), 
+		[](Vec4i l1, Vec4i l2){	return (mid_y(l1) < mid_y(l2)) ; }) ;
+	
+	auto topmost    = lines[std::distance(lines.begin(), lines_iter.first)] ;
+	auto bottommost = lines[std::distance(lines.begin(), lines_iter.second)] ;
+
+	return std::make_pair(topmost, bottommost) ;
+}
+
+std::pair<Vec4i, Vec4i> leftmost_rightmost_lines_iter(std::vector<Vec4i> lines, int img_cols) {
+	Vec4i leftmost_line, rightmost_line ;
+
+	//right edge is a bit farther in, because some machines have a greater inset on the right side
+	//which we might want to catch as a line
+	//These are the inner limits; we don't want lines farther inside than this
+	int left_limit  = img_cols / 6 ;
+	int right_limit = img_cols - left_limit ;
+	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
+
+	//initialize the edges to the center
+	int leftmost_x   = img_cols / 2 ;
+	int rightmost_x  = img_cols / 2 ;
+
+	for(const auto &line : lines) {
+		int line_x = mid_x(line) ;
+		if(line_x < leftmost_x && line_x < left_limit) {
+			leftmost_line = line ;
+			leftmost_x    = line_x ;
+		}
+		if(line_x > rightmost_x && line_x > right_limit) {
+			rightmost_line = line ;
+			rightmost_x    = line_x ;
+		}
+	}
+
+	return std::make_pair(leftmost_line, rightmost_line) ;
+}
+
+std::pair<Vec4i, Vec4i> topmost_bottommost_lines_iter(std::vector<Vec4i> lines, int img_rows) {
+	Vec4i topmost_line, bottommost_line ;
+
+	//initialize all the edges to the center
+	int top_edge    = img_rows / 2 ;
+	int bottom_edge = img_rows / 2 ;
+
+	//right edge is a bit farther in, because some machines have a greater inset on the right side
+	int top_edge_outer_limit = img_rows / 6 ; 
+	int bottom_edge_min = img_cols  / 6 ;
+	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
+
+	for(const auto &lin : lines) {
+		int mid = mid_x(lin) ;
+		if(mid < top_edge && mid < top_edge_max) {
+			topmost = lin ;
+			top_edge = mid ;
+		}
+		if(mid > bottom_edge && mid > right_edge_min) {
+			bottommost = lin ;
+			bottom_edge = mid ;
+		}
+	}
+
+	return std::make_pair(topmost, bottommost) ;
 }

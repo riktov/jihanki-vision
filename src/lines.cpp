@@ -193,3 +193,36 @@ bool is_edge_line(cv::Mat img, cv::Vec4i l) {
 
   return false ;
 }
+
+/**
+ * @brief Indicate whether two line segments are collinear or nearly so 
+ * 
+ * @param l1 
+ * @param l2 
+ * @param max_diff_angle Maximum difference between the lines
+ * @return true 
+ * @return false 
+ */
+bool is_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
+	/* We create four segments connecting the endpoints of the two lines.
+  If any of them have slopes that are close enough to either of the two lines,
+	they are collinear.
+	*/
+
+	std::vector<cv::Vec4i> connectors ;
+
+  connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[0], l2[1])) ;
+  connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[2], l2[3])) ;
+  connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[0], l2[1])) ;
+  connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[2], l2[3])) ;
+
+  std::vector<double> slopes ;
+
+  std::any_of(connectors.begin(), connectors.end(),
+    [l1, l2](cv::Vec4i connector){
+      return false ;
+    }) ;
+
+  return false ;
+
+}
