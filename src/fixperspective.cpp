@@ -551,26 +551,30 @@ std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
 	std::copy_if(lines.begin(), lines.end(), back_inserter(vertical_lines),
 		[](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
 
-	//then remove lines near the center. We are aiming for the machine cabinet edges or the display window edges
-	//Some machines have a greater inset on the right side to the display window.
+	//collect the horizontal lines from the ortho lines
+	std::copy_if(lines.begin(), lines.end(), back_inserter(horizontal_lines),
+		[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
+
+	//Remove vertical lines near the center. We are aiming for the machine cabinet edges or the display window edges
+	//Some machines have a greater inset on the right side to the display window, so we may want to add a bit to the right margin.
 	int left_margin = src.cols / 6 ;
 	int right_margin = src.cols - left_margin ;
 
 	std::remove_if(vertical_lines.begin(), vertical_lines.end(),
 		[left_margin, right_margin](const Vec4i lin){ return mid_x(lin) > left_margin && mid_x(lin) < right_margin ; }) ;
 
-	//collect the horizontal lines from the ortho lines
-	std::copy_if(lines.begin(), lines.end(), back_inserter(horizontal_lines),
-		[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
 
-	//remove lines near the center. 
+	//Remove horizontal lines near the center. 
 	int top_margin = src.rows / 6 ;
 	int bottom_margin = src.cols - left_margin ;
 
 	std::remove_if(horizontal_lines.begin(), horizontal_lines.end(),
 		[top_margin, bottom_margin](const Vec4i lin){ return mid_y(lin) > top_margin && mid_y(lin) < bottom_margin ; }) ;
 
-
+	/* There are two ways we may want to choose edges:
+	1. The outermost regardless of length
+	2. The longest in each half
+	*/
 
 	//now choose the outermost
 	//all the lines are initialized to [0, 0, 0, 0]
@@ -582,34 +586,6 @@ std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
 
 	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
 
-	/*
-	for(const auto &vlin : vertical_lines) {
-		int mid_x = (vlin[0] + vlin[2]) / 2 ;
-		if(mid_x < left_edge && mid_x < left_edge_max) {
-			left_edge_line = vlin ;
-			left_edge = mid_x ;
-		}
-		if(mid_x > right_edge && mid_x > right_edge_min) {
-			right_edge_line = vlin ;
-			right_edge = mid_x ;
-		}
-	}
-
-	const int top_edge_max = src.rows / 2 ;
-	const int bottom_edge_min = src.rows - top_edge_max ;
-
-	for(const auto &hlin : horizontal_lines) {
-		int mid_y = (hlin[1] + hlin[3]) / 2 ;
-		if(mid_y < top_edge && mid_y < top_edge_max) {
-			top_edge_line = hlin ;
-			top_edge = mid_y ;
-		}
-		if(mid_y > bottom_edge && mid_y > bottom_edge_min) {
-			bottom_edge_line = hlin ;
-			bottom_edge = mid_y ;
-		}
-	}
-	*/
 
 	/* doing it functionally:
 	*/
