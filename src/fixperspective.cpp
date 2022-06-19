@@ -333,7 +333,9 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 
 	// std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
 	auto roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
-	std::vector<Point2f> dst_corners(4);
+	std::vector<Point2f> dst_corners;
+	std::vector<Point2f> roi_corners_v(roi_corners.begin(), roi_corners.end()) ;
+
 	/*
 	  for(size_t i = 0 ; i < roi_corners.size() ; i++) {
 	  Point2f corner = roi_corners[i] ;
@@ -446,7 +448,7 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 		std::cout << std::endl ;
 	}
 
-	Mat H = findHomography(roi_corners, dst_corners);
+	Mat H = findHomography(roi_corners_v, dst_corners);
 	
 	auto corrected_image_size =
 	  Size(cvRound(dst_corners[2].x + right_margin),
@@ -472,7 +474,8 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	@param corrected_img image
 */
 Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) {
-	Mat trans = getPerspectiveTransform(detected_corners, dst_corners) ;
+	std::vector<Point2f> corners_v(detected_corners.begin(), detected_corners.end()) ;
+	Mat trans = getPerspectiveTransform(corners_v, dst_corners) ;
 
 	std::vector<Point2f> img_frame(4), transformed ;
 
