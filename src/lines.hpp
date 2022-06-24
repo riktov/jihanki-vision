@@ -30,3 +30,4 @@ bool is_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) ;
 
 inline int mid_x(cv::Vec4i lin) { return (lin[0] + lin[2]) / 2 ; }
 inline int mid_y(cv::Vec4i lin) { return (lin[1] + lin[3]) / 2 ; }
+inline int len_sq(cv::Vec4i lin) { return std::pow((lin[0] - lin[2]), 2) + std::pow((lin[1] - lin[3]), 2) ; }

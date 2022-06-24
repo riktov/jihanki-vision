@@ -25,12 +25,11 @@ using namespace cv ;
  * @param bounds_tblr vector of 4 points
  * @param rect_color color for the quadrilateral
  */
-void plot_bounds(Mat img, std::array<Vec4i, 4> bounds_tblr, Scalar rect_color) {
-	Vec4i top_line = bounds_tblr[0] ;
-	Vec4i bottom_line = bounds_tblr[1] ;
-	Vec4i left_line = bounds_tblr[2] ;
-	Vec4i right_line = bounds_tblr[3] ;
-
+void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
+	if (bounds_tblr.empty()) {
+		std::cout << "bounds is empty" << std::endl ;
+		return ;	
+	}
 	if (std::any_of(bounds_tblr.begin(), bounds_tblr.end(),
 		[](Vec4i l){
 			return is_zero_line(l) ;
@@ -38,6 +37,14 @@ void plot_bounds(Mat img, std::array<Vec4i, 4> bounds_tblr, Scalar rect_color) {
 			std::cout << "Zero line in bounds, bailing" << std::endl ;
 			return ;
 		}
+
+	Vec4i top_line = bounds_tblr[0] ;
+	Vec4i bottom_line = bounds_tblr[1] ;
+	Vec4i left_line = bounds_tblr[2] ;
+	Vec4i right_line = bounds_tblr[3] ;
+
+	std::cout << "About to check for zero lines" << std::endl ;
+
 
 	int line_thickness = 24 ;
 
@@ -53,6 +60,8 @@ void plot_bounds(Mat img, std::array<Vec4i, 4> bounds_tblr, Scalar rect_color) {
 		draw_line(img, l_c.first, l_c.second, line_thickness) ;
 		std::cout << l_c.first << std::endl ;
 	}
+
+	std::cout << "About to get line intersections" << std::endl ;
 
 	Point2f pt_tl = line_intersection(top_line, left_line) ;
 	Point2f pt_tr = line_intersection(top_line, right_line) ;
@@ -73,3 +82,4 @@ void plot_bounds(Mat img, std::array<Vec4i, 4> bounds_tblr, Scalar rect_color) {
 		pt_prev = pt ;
 	} ;
 }
+
