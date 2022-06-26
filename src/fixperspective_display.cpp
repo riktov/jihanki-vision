@@ -83,3 +83,25 @@ void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
 	} ;
 }
 
+/**
+ * @brief display
+ * 
+ * @param img Ref because image itself is replaced using cvtColor
+ * @param rc 
+ */
+void display_margins(Mat &img, Rect rc) {
+	Mat img_inner = img(rc).clone();
+
+	cvtColor(img_inner, img_inner, COLOR_BGR2GRAY) ;
+	cvtColor(img_inner, img_inner, COLOR_GRAY2BGR) ;
+	// circle(img, Point(100, 100), 1500, Scalar(255, 45, 0), 50) ;
+
+	img_inner.copyTo(img(rc)) ;
+
+	// Point2i pt_tr = 
+	line(img, rc.tl(), Point2i(rc.x + rc.width, rc.y), Scalar(1, 100, 255), 20) ;	//top
+	line(img, rc.tl(), Point2i(rc.x, rc.y + rc.height), Scalar(1, 100, 255), 20) ;	//left
+	line(img, Point2i(rc.x + rc.width, rc.y), rc.br(), Scalar(1, 100, 255), 20) ;	//right
+	line(img, Point2i(rc.x, rc.y + rc.height), rc.br(), Scalar(1, 100, 255), 20) ;	//bottom
+
+}
