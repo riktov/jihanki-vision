@@ -107,10 +107,6 @@ int main(int argc, char **argv) {
 	
 	//test() ; exit(0);
 
-	if (argc < 2) {
-		help() ;
-	}
-
 	dest_dir = DEFAULT_DEST_DIR ;
 	
 	const char *opts =  "bcd:nv";
@@ -136,16 +132,23 @@ int main(int argc, char **argv) {
 				break ;
 		}
 	}
+
+	int num_file_args = argc - optind - 1 ;
+
+	if (num_file_args < 1) {
+		std::cout << "No input files" << std::end ; 
+		help() ;
+	}
 	
 	for (int idx = optind ; idx < argc ; idx++) {
-	char *filename ;
-	filename = argv[idx] ;
-	
-	std::stringstream dest_path ;
-	
-	if(!cmdopt_nowrite) {		
-		dest_path << dest_dir << "/" << basename(filename) ;
-	}
+		char *filename ;
+		filename = argv[idx] ;
+		
+		std::stringstream dest_path ;
+		
+		if(!cmdopt_nowrite) {		
+			dest_path << dest_dir << "/" << basename(filename) ;
+		}
 	
 	process_file(filename, dest_path.str().c_str()) ;
 	}
