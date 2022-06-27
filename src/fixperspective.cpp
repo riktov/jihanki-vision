@@ -33,14 +33,14 @@ using namespace cv ;
 /* local function declarations */
 int process_file(char *src_file, const char *dest_file) ;
 Mat transform_perspective(Mat img, Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
-inline Mat transform_perspective(Mat img, const std::array<Vec4i, 4>lines_tblr) {
+inline Mat transform_perspective(Mat img, const std::vector<Vec4i>lines_tblr) {
   return transform_perspective(img, lines_tblr[0], lines_tblr[1], lines_tblr[2], lines_tblr[3]) ;
 }
 //Mat crop_orthogonal(Mat src) ;
-std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
-std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
-std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) ;
-Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) ;
+std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
+std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
+std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
+Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) ;
 std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) ;
 std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) ;
 
@@ -170,9 +170,21 @@ int process_file(char *filename, const char *dest_file) {
 		}
 	}
 
+	/*
+	int left_margin = src.cols / 4 ;
+	int right_margin = src.cols - left_margin ;
+	int top_margin = src.rows / 6 ;
+	int bottom_margin = src.rows - top_margin ;
+
+	display_margins(src, Rect(left_margin, top_margin, src.cols - left_margin - left_margin, src.rows - top_margin - top_margin)) ;
+	imshow("Margins" , scale_for_display(src)) ;
+	waitKey() ;
+	return -1 ;
+	*/
+
   //convert to value or hue channel?
   //hue generally gives better results, but is weak if the machine is white.
-	Mat img_val, img_hue, canny ;
+	Mat img_val, img_hue ;
 
 	cvtColor(src, img_val, COLOR_BGR2GRAY) ;
 	cvtColor(src, img_hue, COLOR_BGR2HSV) ;	//we will overwrite with just the hue channel
@@ -197,13 +209,24 @@ int process_file(char *filename, const char *dest_file) {
 	//img_gray_reduced = src_gray.clone() ;
 	//img_gray_reduced = Scalar(0, 0, 0) ;
 
-	if(cmdopt_verbose) { std::cout << "Trying to detect on hue" << std::endl ; }
-	auto bounding_lines_hue = detect_bounding_lines_iterate_scale(img_hue) ;
-	if(cmdopt_verbose) { std::cout << "Trying to detect on val" << std::endl ; }
-	auto bounding_lines_val = detect_bounding_lines_iterate_scale(img_val) ;
 
-	Mat transformed_image = transform_perspective(src, bounding_lines_hue) ;
-	// Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
+
+
+	if(cmdopt_verbose) { std::cout << std::endl << "-------Trying to detect on hue" << std::endl ; }
+	auto bounding_lines_hue = detect_bounding_lines_iterate_scale(img_hue) ;
+
+	if(cmdopt_verbose) { std::cout << std::endl << "-------Trying to detect on val" << std::endl ; }
+	auto bounding_lines_val = detect_bounding_lines_iterate_scale(img_val) ;
+	
+	if(bounding_lines_hue.empty() && bounding_lines_val.empty()) {
+		std::cout << "No good lines at all!! - bailing." << std::endl ;
+		return -1 ;
+	}
+
+
+
+
+	Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
@@ -213,6 +236,8 @@ int process_file(char *filename, const char *dest_file) {
 		//convert to color so we can draw in color on them
 		cvtColor(img_val, img_val, COLOR_GRAY2BGR) ;
 		cvtColor(img_hue, img_hue, COLOR_GRAY2BGR) ;
+
+		std::cout << "Plotting bounds lines" << std::endl ;
 		plot_bounds(img_hue, bounding_lines_hue, Scalar(255, 127, 200)) ;	//purple
 		plot_bounds(img_val, bounding_lines_val, Scalar(127, 200, 255)) ;	//orange
 		imshow("Value (orange)", scale_for_display(img_val)) ;
@@ -242,14 +267,208 @@ int process_file(char *filename, const char *dest_file) {
 	return 0 ;
 }
 
+
+/**
+ * @brief Detect the maximum bounding significant Hough lines
+ * 
+ * @param src Source image
+ * @param hough_threshold For HoughLinesP
+ * @return std::vector<Vec4i> 
+ */
+std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
+	std::vector<Vec4i> lines, vertical_lines, horizontal_lines ;
+	std::vector<Vec4i> boundary_lines ;
+
+	//TODO: change return value to array<Vec4i, 4>
+	//min length of Hough lines based on image size
+	const int min_vertical_length = src.rows / 4 ; //6
+	const int min_horizontal_length = src.cols / 6 ; //10
+	const int min_length = min(min_vertical_length, min_horizontal_length) ;
+	const int max_gap = 70 ; //100
+
+	//canny parameters optimized for jihanki images?
+	// last three are thresh1, thresh2, sobel_aperture
+
+	Mat cann ;
+
+	Canny(src, cann, 30, 450, 3) ;
+	HoughLinesP(cann, lines, 1, CV_PI/180, hough_threshold * 3, min_length, max_gap) ;
+
+	/*
+	Let's completely rewrite this section.
+	1. Divide the image into four outside strips (left, right, top bottom) from the start. 
+	No point in looking for edges and lines that will be excluded anyway
+	2. Combine all the detections - scaled, and channels (hue, values) - and then select the best
+	3. If the number of detected lines is not too great, maybe look for collinears and join them. 
+	*/
+
+	//remove diagonal lines
+	auto diag_iter = std::remove_if(lines.begin(), lines.end(),
+		[](Vec4i lin){ return normalized_slope(lin) > 0.1 ; }) ;
+	lines.erase(diag_iter, lines.end()) ;
+
+	//collect the vertical lines from the ortho lines
+	std::copy_if(lines.begin(), lines.end(), back_inserter(vertical_lines),
+		[](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
+	std::cout << "Found " << vertical_lines.size() << " vertical lines" << std::endl ;
+
+	//collect the horizontal lines from the ortho lines
+	std::copy_if(lines.begin(), lines.end(), back_inserter(horizontal_lines),
+		[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
+	std::cout << "Found " << horizontal_lines.size() << " horizontal lines" << std::endl ;
+
+	//Remove vertical lines near the center. We are aiming for the machine cabinet edges or the display window edges
+	//Some machines have a greater inset on the right side to the display window, so we may want to add a bit to the right margin.
+	int left_margin = src.cols / 4 ;
+	int right_margin = src.cols - left_margin ;
+	std::cout << "removing lines near center" << std::endl ;
+
+	auto vert_center_iter = std::remove_if(vertical_lines.begin(), vertical_lines.end(),
+		[left_margin, right_margin](const Vec4i lin){ return mid_x(lin) > left_margin && mid_x(lin) < right_margin ; }) ;
+	vertical_lines.erase(vert_center_iter, vertical_lines.end());
+
+	int center_col = src.cols / 2 ;
+	std::vector<Vec4i> left_lines, right_lines ;
+
+	// std::cout << "collecting left and right lines" << std::endl ;
+	
+	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(left_lines),
+		[center_col](const Vec4i lin){ return mid_x(lin) < center_col ; }) ;
+	
+	if(left_lines.empty()) {
+		std::cout << "No lines in left side." << std::endl ;
+		// return boundary_lines ;
+	}
+
+	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(right_lines),
+		[center_col](const Vec4i lin){ return mid_x(lin) > center_col ; }) ;
+
+	if(right_lines.empty()) {
+		std::cout << "No lines in right side." << std::endl ;
+		// return boundary_lines ;
+	}
+
+	//Remove horizontal lines near the center. 
+	int top_margin = src.rows / 6 ;
+	int bottom_margin = src.rows - top_margin ;
+
+	auto horiz_center_iter = std::remove_if(horizontal_lines.begin(), horizontal_lines.end(),
+		[top_margin, bottom_margin](const Vec4i lin){ return mid_y(lin) > top_margin && mid_y(lin) < bottom_margin ; }) ;
+	horizontal_lines.erase(horiz_center_iter, horizontal_lines.end());
+
+	int center_row = src.rows / 2 ;
+	std::vector<Vec4i> top_lines, bottom_lines ;
+
+	// std::cout << "collecting top and bottom" << std::endl ;
+
+	std::copy_if(horizontal_lines.begin(), horizontal_lines.end(), std::back_inserter(top_lines),
+		[center_row](const Vec4i lin){ return mid_y(lin) < center_row ; }) ;
+
+	if(top_lines.empty()) { 
+		std::cout << "No lines in top side." << std::endl ;
+	}
+
+	std::copy_if(horizontal_lines.begin(), horizontal_lines.end(), std::back_inserter(bottom_lines),
+		[center_row](const Vec4i lin){ return mid_y(lin) > center_row ; }) ;
+
+	if(bottom_lines.empty()) {
+		std::cout << "No lines in bottom side." << std::endl ;
+		// return boundary_lines ;
+	}
+
+	//if any of the four line collections are empty, then bail
+
+
+	/* There are two ways we may want to choose edges:
+	1. The outermost regardless of length
+	2. The longest in each half
+	*/
+
+	cv::Vec4i left_edge_line, top_edge_line, right_edge_line, bottom_edge_line ;
+
+	if(left_lines.size() > 0) {
+		auto left_edge_iter = std::min_element(left_lines.begin(), left_lines.end(), [](Vec4i l1, Vec4i l2){ return (mid_x(l1) < mid_x(l2)) ; }) ;
+		left_edge_line = left_lines.at(std::distance(left_lines.begin(), left_edge_iter)) ;
+		std::cout << "leftmost edge from " << left_lines.size() << ": " << left_edge_line << std::endl ;
+	}
+
+	if(right_lines.size() > 0) {
+		auto right_edge_iter = std::max_element(right_lines.begin(), right_lines.end(), [](Vec4i l1, Vec4i l2){ return (mid_x(l1) < mid_x(l2)) ; }) ;
+		right_edge_line = right_lines.at(std::distance(right_lines.begin(), right_edge_iter)) ;
+		std::cout << "rightmost edge from " << right_lines.size() << ": " << right_edge_line << std::endl ;
+	}
+
+	if(top_lines.size() > 0) {
+		auto top_edge_iter = std::min_element(top_lines.begin(), top_lines.end(), [](Vec4i l1, Vec4i l2){ return (mid_y(l1) < mid_y(l2)) ; }) ;
+		top_edge_line = top_lines.at(std::distance(top_lines.begin(), top_edge_iter)) ;
+		std::cout << "topmost edge from " << top_lines.size() << ": " << top_edge_line << std::endl ;
+	}
+	
+	if(bottom_lines.size() > 0) {
+		auto bottom_edge_iter = std::max_element(bottom_lines.begin(), bottom_lines.end(), [](Vec4i l1, Vec4i l2){ return (mid_y(l1) < mid_y(l2)) ; }) ;
+		bottom_edge_line = bottom_lines.at(std::distance(bottom_lines.begin(), bottom_edge_iter)) ;
+		std::cout << "bottommost edge " << bottom_lines.size() << ": " << bottom_edge_line << std::endl ;
+	}
+
+	//auto top_edge_line    = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.first)] ;
+	//auto bottom_edge_line = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.second)] ;
+
+	bool is_detect_longest_edge = false ;
+	is_detect_longest_edge = true ;
+
+	if(is_detect_longest_edge) {
+		std::cout << "longest line in left area from " << left_lines.size() << ": " << left_edge_line << std::endl ;
+		if(left_lines.size() > 0) {
+			auto left_iter = std::max_element(left_lines.begin(), left_lines.end(), [](Vec4i l1, Vec4i l2){ 
+				return (len_sq(l1) < len_sq(l2)) ; 
+			}) ;
+			left_edge_line = left_lines.at(std::distance(left_lines.begin(), left_iter)) ;
+		}
+
+		std::cout << "longest line in right area from " << right_lines.size() << std::endl ;
+		if(right_lines.size() > 0) {
+			auto right_iter = std::max_element(right_lines.begin(), right_lines.end(), [](Vec4i l1, Vec4i l2){ 
+				return (len_sq(l1) < len_sq(l2)) ; 
+			}) ;
+			right_edge_line = right_lines.at(std::distance(right_lines.begin(), right_iter)) ;
+			std::cout << right_edge_line << std::endl ;
+		}
+
+		std::cout << "longest line in top area from " << top_lines.size() << std::endl ;
+		if(top_lines.size() > 0) {
+			auto top_iter = std::max_element(top_lines.begin(), top_lines.end(), [](Vec4i l1, Vec4i l2){ 
+				return (len_sq(l1) < len_sq(l2)) ; 
+			}) ;
+			top_edge_line = top_lines.at(std::distance(top_lines.begin(), top_iter)) ;
+			std::cout << top_edge_line << std::endl ;
+		}
+		std::cout << "finding longest line in bottom area from " << bottom_lines.size() << std::endl ;
+		if(bottom_lines.size() > 0) {		
+			auto bottom_iter = std::max_element(bottom_lines.begin(), bottom_lines.end(), [](Vec4i l1, Vec4i l2){ 
+				return (len_sq(l1) < len_sq(l2)) ; 
+			}) ;
+			bottom_edge_line = bottom_lines.at(std::distance(bottom_lines.begin(), bottom_iter)) ;
+			std::cout << bottom_edge_line << std::endl ;
+		}
+
+	}
+
+	//we could also al
+	boundary_lines.push_back(top_edge_line) ;
+	boundary_lines.push_back(bottom_edge_line) ;
+	boundary_lines.push_back(left_edge_line) ;
+	boundary_lines.push_back(right_edge_line) ;
+
+	return boundary_lines ;
+}
+
 /**
  * @brief Find the best bounding lines by detecting at successive scales.
  * 
- * @param img_src Source image
- * @param bounding_lines Vector of lines to receive values
- * @return std::vector<Vec4i> Vector of four lines. If any are empty, a set of four good bounding lines was not detected.
+ * @param img_src  Source image
+ * @return std::vector<Vec4i>  Vector of four lines. If any are empty, a set of four good bounding lines was not detected.
  */
-std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) {
+std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) {
 	auto scale = 1 ;
 	const auto SCALE_DOWN_MAX = 4 ;
 	bool is_bounding_lines_detected = false ;
@@ -257,18 +476,17 @@ std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) {
 
 	std::cout << "detect_bounding_lines_iterate_scale" << std::endl ;
 
-	std::array<Vec4i, 4> bounding_lines ;
+	std::vector<Vec4i> bounding_lines ;
 	
 	for(scale = 1 ; scale <= SCALE_DOWN_MAX ; scale *= 2) {
 		if(cmdopt_verbose) {
-			std::cout << "Trying scale " << scale << " for image size: " << img_working.size() ;
+			std::cout << "Trying scale " << scale << " for image size: " << img_working.size() << std::endl  ;
 		}
 
 		bounding_lines = detect_bounding_lines(img_working) ;
 
 		// A zero line (initial value for a Vec4i) indicates that no good lines were found for that one
-		is_bounding_lines_detected = std::none_of(bounding_lines.begin(),
-			bounding_lines.end(),
+		is_bounding_lines_detected = std::none_of(bounding_lines.begin(), bounding_lines.end(),
 			[](Vec4i lin) { return is_zero_line(lin) ;}) ;
 
 		if (is_bounding_lines_detected) {
@@ -295,7 +513,7 @@ std::array<Vec4i, 4> detect_bounding_lines_iterate_scale(const Mat img_src) {
 		return bounding_lines ;
 	} else {
 		Vec4i v ;
-		return std::array<Vec4i, 4> {{v, v, v, v}} ;
+		return std::vector<Vec4i> {{v, v, v, v}} ;
 	}
 }
 
@@ -339,14 +557,7 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	// std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
 	auto roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
 	std::vector<Point2f> dst_corners;
-	std::vector<Point2f> roi_corners_v(roi_corners.begin(), roi_corners.end()) ;
-
-	/*
-	  for(size_t i = 0 ; i < roi_corners.size() ; i++) {
-	  Point2f corner = roi_corners[i] ;
-	  circle(img, corner, 4, Scalar(255, 255, 127), 3) ;
-	  }
-	*/
+	// std::vector<Point2f> roi_corners_v(roi_corners.begin(), roi_corners.end()) ;
 	
 	/*
 	  There are many instances when the lines are legitimately horizontal or vertical,
@@ -367,28 +578,14 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	  sharp edges which could confuse the next cropper.
 	  Or we could fill those in with a key color like magenta
 	*/
-	//These are unit-length segments, we just need to calculate the intercection.
-	//auto left_edge = Vec4i(0, 0, 0, 1) ;
-	//auto right_edge = Vec4i(img.cols, 0, img.cols, 1) ;
-	//auto top_edge = Vec4i(0, 0, 1, 0) ;
-	//auto bottom_edge = Vec4i(0, img.rows, 1, img.rows) ;
-	
-	// Point2f top_line_left_intercept  = line_intersection(top_line, left_edge) ;
-	// Point2f top_line_right_intercept = line_intersection(top_line, right_edge) ;
-	
-	//only if not horizontal; unlikely given that the lines are close to ortho
-	// Point2f top_line_top_intercept  = line_intersection(top_line, top_edge) ;
-	
-	// Point2f bottom_line_left_intercept  = line_intersection(bottom_line, left_edge) ;
-	// Point2f bottom_line_right_intercept = line_intersection(bottom_line, right_edge) ;
 	
 	auto pt_tl = line_intersection(top_line, left_line) ;
-	auto pt_tr = line_intersection(top_line, right_line) ;
 	auto pt_br = line_intersection(bottom_line, right_line) ;
-	auto pt_bl = line_intersection(bottom_line, left_line) ;
+	//auto pt_tr = line_intersection(top_line, right_line) ;
+	//auto pt_bl = line_intersection(bottom_line, left_line) ;
 	
 	// float top_left_margin = line_length(top_line_left_intercept, pt_tl) ;
-	float left_margin, top_margin, right_margin, bottom_margin ;
+	// float left_margin, top_margin, right_margin, bottom_margin ;
 	
 	/*
 	  The left margin in the
@@ -399,27 +596,23 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	
 	
 	//the longer of lengths of the the top and bottom lines
-	
-	if(cmdopt_verbose) {
-	  std::cout << "diff of roi_corners[0] and [1]: " << (roi_corners[0] - roi_corners[1]) << std::endl ;
-	}
-	
 	float nm = (float)norm(roi_corners[0] - roi_corners[1]) ;
 	
 	if(cmdopt_verbose) {
-	  std::cout << "norm(diff roi_corners[0] and [1]): " << nm << std::endl ;
+		std::cout << "diff of roi_corners[0] and [1]: " << (roi_corners[0] - roi_corners[1]) << std::endl ;
+		std::cout << "norm(diff roi_corners[0] and [1]): " << nm << std::endl ;
 	}
 	
 	float dst_width  = (float)std::max(norm(roi_corners[0] - roi_corners[1]), norm(roi_corners[2] - roi_corners[3]));
 	//the longer of lengths of the the left and right lines
 	float dst_height = (float)std::max(norm(roi_corners[1] - roi_corners[2]), norm(roi_corners[3] - roi_corners[0]));
 	
-	float aspect_ratio = dst_height / dst_width ;
+	// float aspect_ratio = dst_height / dst_width ;
 	
-	left_margin = pt_tl.x ;
-	top_margin = pt_tl.y ;
-	right_margin = img.cols - pt_tr.x ;
-	bottom_margin = img.rows - pt_br.y ;
+	auto left_margin = pt_tl.x ;
+	auto top_margin = pt_tl.y ;
+	auto right_margin = img.cols - pt_br.x ;
+	auto bottom_margin = img.rows - pt_br.y ;
 	//  bottom_margin = (aspect_ratio * (left_margin + dst_width + right_margin)) - top_margin - dst_height ;
 	/*
 	  Bottom margin should be calculated such that
@@ -427,41 +620,38 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	  dst_width / dst_height
 	*/
 	
-	if(cmdopt_verbose) { std::cout << "left margin: " << left_margin << std::endl ;}
-	if(cmdopt_verbose) { std::cout << "top margin: " << top_margin << std::endl ; }
-	if(cmdopt_verbose) { std::cout << "right margin: " << right_margin << std::endl ; }
-	if(cmdopt_verbose) { std::cout << "bottom margin: " << bottom_margin << std::endl ; }
+	if(cmdopt_verbose) { 
+		std::cout << "left margin: " << left_margin << std::endl ;
+		std::cout << "top margin: " << top_margin << std::endl ; 
+		std::cout << "right margin: " << right_margin << std::endl ; 
+		std::cout << "bottom margin: " << bottom_margin << std::endl ; 
+	}
 	
 	//these points define a rectangle in the destination that we want to map roi_corners to.
 	//
-	//TL
-	dst_corners[0] = Point2f(left_margin, top_margin) ;
-	//TR
-	dst_corners[1] = Point2f(dst_width + left_margin, top_margin) ;
-	//BR
-	dst_corners[2] = Point2f(dst_width + left_margin, dst_height + top_margin) ;
-	//BL
-	dst_corners[3] = Point2f(left_margin, dst_height + top_margin) ;
+	dst_corners.push_back(Point2f(left_margin, top_margin)) ;	//TL
+	dst_corners.push_back(Point2f(dst_width + left_margin, top_margin)) ; //TR
+	dst_corners.push_back(Point2f(dst_width + left_margin, dst_height + top_margin)) ; //BR
+	dst_corners.push_back(Point2f(left_margin, dst_height + top_margin)) ;//BL
 	
 	if(cmdopt_verbose) { 
 		std::cout << "dst_corners: " ; 
-		for(size_t i = 0 ; i < dst_corners.size() ; i++) {
-			if(cmdopt_verbose) {
-				std::cout << dst_corners[i] << " " ;
-			}
+		for(auto corner: dst_corners) {
+			std::cout << corner << " " ;
 		}
 		std::cout << std::endl ;
 	}
+	std::cout << "about to get homography" << std::endl ;
 
-	Mat H = findHomography(roi_corners_v, dst_corners);
+	auto hom = cv::findHomography(roi_corners, dst_corners);
 	
-	auto corrected_image_size =
-	  Size(cvRound(dst_corners[2].x + right_margin),
-		  cvRound(dst_corners[2].y + bottom_margin));
+	std::cout << "Got homography" << std::endl ;
+	auto corrected_image_size =	Size(cvRound(dst_corners[2].x + right_margin), cvRound(dst_corners[2].y + bottom_margin));
 	Mat corrected_image ;//= img.clone() ;
 	
 	// do perspective transformation
-	warpPerspective(img, corrected_image, H, corrected_image_size, INTER_LINEAR, BORDER_CONSTANT, Scalar(255, 0, 255));
+	warpPerspective(img, corrected_image, hom, corrected_image_size, INTER_LINEAR, BORDER_CONSTANT, Scalar(255, 0, 255));
+	std::cout << "returned from warpPerspective" << std::endl ;
 
 	//clip out the blank background areas
 	if (cmdopt_clip) {
@@ -482,7 +672,7 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
  * @param dst_corners 
  * @return Rect 
  */
-Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detected_corners, std::vector<Point2f> dst_corners) {
+Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) {
 	std::vector<Point2f> corners_v(detected_corners.begin(), detected_corners.end()) ;
 	Mat trans = getPerspectiveTransform(corners_v, dst_corners) ;
 
@@ -515,125 +705,6 @@ Rect rect_within_image(Mat img, Mat corrected_img, std::array<Point2f, 4> detect
 	return clip_frame ;
 }
 
-/**
- * @brief Detect the maximum bounding significant hough lines
- * 
- * @param src Source image
- * @param hough_threshold For HoughLinesP
- * @return std::vector<Vec4i> 
- */
-std::array<Vec4i, 4> detect_bounding_lines(Mat src, int hough_threshold) {
-	std::vector<Vec4i> lines, vertical_lines, horizontal_lines ;
-
-	//TODO: change return value to array<Vec4i, 4>
-	//min length of Hough lines based on image size
-	const int min_vertical_length = src.rows / 4 ; //6
-	const int min_horizontal_length = src.cols / 6 ; //10
-	const int min_length = min(min_vertical_length, min_horizontal_length) ;
-	const int max_gap = 70 ; //100
-
-	//canny parameters optimized for jihanki images?
-	// last three are thresh1, thresh2, sobel_aperture
-
-	Mat cann ;
-
-	Canny(src, cann, 30, 450, 3) ;
-	HoughLinesP(cann, lines, 1, CV_PI/180, hough_threshold * 3, min_length, max_gap) ;
-
-	// copy_if(lines.begin(), lines.end(), back_inserter(ortho_lines),
-		// [](const Vec4i lin) { return normalized_slope(lin) < 0.1 ; }) ;
-
-	//remove diagonal lines
-	std::remove_if(lines.begin(), lines.end(),
-		[](Vec4i lin){ return normalized_slope(lin) > 0.1 ; }) ;
-
-	//collect the vertical lines from the ortho lines
-	std::copy_if(lines.begin(), lines.end(), back_inserter(vertical_lines),
-		[](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
-
-	//collect the horizontal lines from the ortho lines
-	std::copy_if(lines.begin(), lines.end(), back_inserter(horizontal_lines),
-		[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
-
-	//Remove vertical lines near the center. We are aiming for the machine cabinet edges or the display window edges
-	//Some machines have a greater inset on the right side to the display window, so we may want to add a bit to the right margin.
-	int left_margin = src.cols / 6 ;
-	int right_margin = src.cols - left_margin ;
-
-	std::remove_if(vertical_lines.begin(), vertical_lines.end(),
-		[left_margin, right_margin](const Vec4i lin){ return mid_x(lin) > left_margin && mid_x(lin) < right_margin ; }) ;
-
-
-	//Remove horizontal lines near the center. 
-	int top_margin = src.rows / 6 ;
-	int bottom_margin = src.cols - left_margin ;
-
-	std::remove_if(horizontal_lines.begin(), horizontal_lines.end(),
-		[top_margin, bottom_margin](const Vec4i lin){ return mid_y(lin) > top_margin && mid_y(lin) < bottom_margin ; }) ;
-
-	/* There are two ways we may want to choose edges:
-	1. The outermost regardless of length
-	2. The longest in each half
-	*/
-
-	//now choose the outermost
-	//all the lines are initialized to [0, 0, 0, 0]
-	Vec4i top_edge_line, bottom_edge_line ;
-
-	//initialize all the edges to the center
-	int top_edge = src.rows / 2 ;
-	int bottom_edge = src.rows / 2 ;
-
-	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
-
-
-	/* doing it functionally:
-	*/
-
-	/* std::vector<Vec4i> lines_left_half, lines_right_half, lines_top_half, lines_bottom_half ;
-
-	int width_center = src.cols / 2 ;
-	int height_center = src.rows / 2 ;
-
-	//collect all vertical lines in the left half
-	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_left_half), 
-		[width_center](Vec4i lin){ return ((lin[0] + lin[2]) / 2) < width_center ; }) ; 
-
-	//collect all vertical lines in the right half
-	std::copy_if(vertical_lines.begin(), vertical_lines.end(), std::back_inserter(lines_right_half), 
-		[width_center](Vec4i lin){ return ((lin[0] + lin[2]) / 2) >= width_center ; }) ; 
-	*/
-
-	std::cout << "gathering outermost" << std::endl ;
-	
-	//first we should remove lines that are too close to the center
-
-	int inner_limit_left = src.rows / 6 ;
-	int inner_limit_right = src.rows - inner_limit_left ;
-
-	std::remove_if(vertical_lines.begin(), vertical_lines.end(),
-		[inner_limit_left, inner_limit_right](Vec4i lin){
-			return mid_x(lin) > inner_limit_left && mid_x(lin) < inner_limit_right ; 
-		}) ;
-	auto left_and_right = leftmost_rightmost_lines(vertical_lines) ;
-
-	//get the min and max (topmost, bottommost) line by centerpoint
-	auto horiz_lines_iter = std::minmax_element(horizontal_lines.begin(), horizontal_lines.end(), 
-		[](Vec4i l1, Vec4i l2){
-			return ((l1[1] + l1[3]) / 2) < ((l2[1] + l2[3]) / 2) ;
-		}) ;
-	
-	top_edge_line    = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.first)] ;
-	bottom_edge_line = horizontal_lines[std::distance(horizontal_lines.begin(), horiz_lines_iter.second)] ;
-
-	std::array<Vec4i, 4> bound_lines ;
-	bound_lines[0] = top_edge_line ;
-	bound_lines[1] = bottom_edge_line ;
-	bound_lines[2] = left_and_right.first ;
-	bound_lines[3] = left_and_right.second ;
-
-	return bound_lines ;
-}
 
 /* sort function for sorting horizontal line by y*/
 bool cmp_horizontal_line_y(Vec4i l1, Vec4i l2) {
@@ -651,15 +722,15 @@ bool cmp_horizontal_line_y(Vec4i l1, Vec4i l2) {
  * @param left 
  * @param right
  * 
- * @return std::array<Point2f, 4> TL, TR, BR, BR - clockwise from TL
+ * @return std::array<Point2f, 4> TL, TR, BR, BL - clockwise from TL
  */
-std::array<Point2f, 4> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) {
-	std::array<Point2f, 4> points ;
+std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) {
+	std::vector<Point2f> points ;
 
-	points[0] = line_intersection(top, left) ;
-	points[1] = line_intersection(top, right) ;
-	points[2] = line_intersection(bottom, right) ;
-	points[3] = line_intersection(bottom, left) ;
+	points.push_back(line_intersection(top, left)) ;
+	points.push_back(line_intersection(top, right)) ;
+	points.push_back(line_intersection(bottom, right)) ;
+	points.push_back(line_intersection(bottom, left)) ;
 
 	return points ;
 }
@@ -692,8 +763,8 @@ std::pair<Vec4i, Vec4i> leftmost_rightmost_lines_iter(std::vector<Vec4i> lines, 
 	//right edge is a bit farther in, because some machines have a greater inset on the right side
 	//which we might want to catch as a line
 	//These are the inner limits; we don't want lines farther inside than this
-	int left_limit  = img_cols / 6 ;
-	int right_limit = img_cols - left_limit ;
+	const int left_limit  = img_cols / 6 ;
+	const int right_limit = img_cols - left_limit ;
 	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
 
 	//initialize the edges to the center
@@ -718,26 +789,24 @@ std::pair<Vec4i, Vec4i> leftmost_rightmost_lines_iter(std::vector<Vec4i> lines, 
 std::pair<Vec4i, Vec4i> topmost_bottommost_lines_iter(std::vector<Vec4i> lines, int img_rows) {
 	Vec4i topmost_line, bottommost_line ;
 
+	const int top_limit = img_rows / 6 ; 
+	const int bottom_limit = img_rows - top_limit ;
+
 	//initialize all the edges to the center
-	int top_edge    = img_rows / 2 ;
-	int bottom_edge = img_rows / 2 ;
+	int topmost_y    = img_rows / 2 ;
+	int bottommost_y = img_rows / 2 ;
 
-	//right edge is a bit farther in, because some machines have a greater inset on the right side
-	int top_edge_outer_limit = img_rows / 6 ; 
-	int bottom_edge_min = img_cols  / 6 ;
-	//  int right_edge_min = src.cols - left_edge_max - left_edge_max ;
-
-	for(const auto &lin : lines) {
-		int mid = mid_x(lin) ;
-		if(mid < top_edge && mid < top_edge_max) {
-			topmost = lin ;
-			top_edge = mid ;
+	for(const auto &line : lines) {
+		int line_y = mid_y(line) ;
+		if(line_y < topmost_y && line_y < top_limit) {
+			topmost_line = line ;
+			topmost_y = line_y ;
 		}
-		if(mid > bottom_edge && mid > right_edge_min) {
-			bottommost = lin ;
-			bottom_edge = mid ;
+		if(line_y > bottommost_y && line_y > bottom_limit) {
+			bottommost_line = line ;
+			bottommost_y = line_y ;
 		}
 	}
 
-	return std::make_pair(topmost, bottommost) ;
+	return std::make_pair(topmost_line, bottommost_line) ;
 }
