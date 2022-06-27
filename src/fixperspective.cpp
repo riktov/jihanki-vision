@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
 	int num_file_args = argc - optind - 1 ;
 
 	if (num_file_args < 1) {
-		std::cout << "No input files" << std::end ; 
+		std::cout << "No input files" << std::endl ; 
 		help() ;
 	}
 	
