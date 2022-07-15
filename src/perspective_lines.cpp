@@ -132,7 +132,7 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 		auto slope = pair.first ;
 		auto plines = pair.second ;
 		if (plines.size() > 1) {
-			std::cout << slope << " slope (" << plines.size() << "): " << std::endl ;
+			std::cout << slope << " slope (" << plines.size() << " lines): " << std::endl ;
 
 			std::map<int, std::vector<perspective_line> > lines_of_intercept ;
 			fill_intercept_dict(lines_of_intercept, plines) ;
@@ -146,19 +146,21 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 					std::cout << "  " << intercept << " intercept: " ;
 					perspective_line merged = merge_pline_collection(plines) ;
 					
-					// plines_with_merges.push_back(merged) ;	
+					plines_with_merges.push_back(merged) ;	
 
+					/*
 					for(auto plin : plines) {	//test
 						plines_with_merges.push_back(plin) ;
 					}				
+					*/
 				} else {
 					//push this single pline of this intercept on to lines
-					// plines_with_merges.push_back(plines.front()) ;
+					plines_with_merges.push_back(plines.front()) ;
 				}
 			}
 		} else {
 			//push this single pline of this slope on to lines
-			// plines_with_merges.push_back(plines.front()) ;
+			plines_with_merges.push_back(plines.front()) ;
 		}
 	}
 
