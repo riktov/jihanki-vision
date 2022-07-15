@@ -10,11 +10,13 @@
 
 #include "lines.hpp"
 
+using namespace cv ;
+
 bool is_horizontal(int x1, int y1, int x2, int y2, int max_dy) {
   // int delta_x = abs(x1 - x2) ;
   int delta_y = abs(y1 - y2) ;
 
-  return (delta_y < max_dy) ;
+  return (delta_y <= max_dy) ;
 }
 
 
@@ -22,40 +24,53 @@ bool is_vertical(int x1, int y1, int x2, int y2, int max_dx) {
   int delta_x = abs(x1 - x2) ;
   // int delta_y = abs(y1 - y2) ;
 
-  return (delta_x < max_dx) ;
+  return (delta_x <= max_dx) ;
 }
 
 
-/* return a float between 0 and 1.0 representing slant from orthogonal to diagonal
-Is this essentially just an arcsin * 100?
-*/
-float normalized_slope(cv::Vec4i line) {
-  int x1 = line[0] ;
-  int y1 = line[1] ;
-  int x2 = line[2] ;
-  int y2 = line[3] ;
 
-  if(x1 == x2) {
-    return 0 ;
-  }
+/**
+ * @brief Return a float representing slant from orthogonal (0.0) to diagonal (1.0)
+Is this essentially just an arcsin?
+ * 
+ * @param line Vec4i
+ * @return float 
+ */
+float slant(cv::Vec4i line) {
+	int dx = abs(line[0] - line[2]) ;
+	int dy = abs(line[1] - line[3]) ;
 
-  if(y1 == y2) {
-    return 0 ;
-  }
+	if(dx == 0) { return 0 ; }
 
-  int dtx = abs(x2 - x1) ;
-  int dty = abs(y2 - y1) ;
+	if(dy == 0) { return 0 ; }
 
-  //  float slope = float(min(dty, dtx)) / float(max(dty, dtx)) ;
 
-  int numer = std::min(dty, dtx) ;
-  int denom = std::max(dty, dtx) ;
+	//  float slope = float(min(dty, dtx)) / float(max(dty, dtx)) ;
 
-  //std::cout << numer << "/" << denom <<  std::endl ;
+	int numer = std::min(dy, dx) ;
+	int denom = std::max(dy, dx) ;
 
-  return (numer * 1.0) / denom ;
+	return (numer * 1.0) / denom ;
 }
 
+/**
+ * @brief Return a signed integer representing the slope in the orientation of the line. Inverse of slant, with sign.
+ * 
+ * @param line 
+ * @return int 
+ */
+int normalized_slope(Vec4i line) {
+	int dx = line[0] - line[2] ;
+	int dy = line[1] - line[3] ;
+
+	if(dx == 0) { return 0 ; }
+	if(dy == 0) { return 0 ; }
+
+	int denom = std::min(dy, dx) ;
+	int numer = std::max(dy, dx) ;
+
+	return numer / denom ;
+}
 
 
 inline int horizontal_length(int x1, int x2) {
@@ -145,17 +160,17 @@ The lines are normalized to length of 1, so alpha is
 the factor
 */
 cv::Vec4i rt_to_pt(float rho, float theta, double alpha) {
-  cv::Point pt1, pt2 ;
-  double a = cos(theta), b = sin(theta) ;
-  double x0 = a*rho, y0 = b*rho ;
-  //double alpha = 1000 ;//alpha is the normalized length of the line
-  pt1.x = cvRound(x0 + alpha * (-b)) ;
-  pt1.y = cvRound(y0 + alpha * (a)) ;
-  pt2.x = cvRound(x0 - alpha * (-b)) ;
-  pt2.y = cvRound(y0 - alpha * (a)) ;
+	cv::Point pt1, pt2 ;
+	double a = cos(theta), b = sin(theta) ;
+	double x0 = a*rho, y0 = b*rho ;
+	//double alpha = 1000 ;//alpha is the normalized length of the line
+	pt1.x = cvRound(x0 + alpha * (-b)) ;
+	pt1.y = cvRound(y0 + alpha * (a)) ;
+	pt2.x = cvRound(x0 - alpha * (-b)) ;
+	pt2.y = cvRound(y0 - alpha * (a)) ;
 
-  cv::Vec4i xyline = cv::Vec4i(pt1.x, pt1.y, pt2.x, pt2.y) ;
-  return xyline ;
+	cv::Vec4i xyline = cv::Vec4i(pt1.x, pt1.y, pt2.x, pt2.y) ;
+	return xyline ;
 }
 
 
@@ -203,7 +218,7 @@ bool is_edge_line(cv::Mat img, cv::Vec4i l) {
  * @return true 
  * @return false 
  */
-bool is_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
+bool xxxis_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
 	/* We create four segments connecting the endpoints of the two lines.
   If any of them have slopes that are close enough to either of the two lines,
 	they are collinear.
@@ -211,10 +226,10 @@ bool is_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
 
 	std::vector<cv::Vec4i> connectors ;
 
-  connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[0], l2[1])) ;
-  connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[2], l2[3])) ;
-  connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[0], l2[1])) ;
-  connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[2], l2[3])) ;
+	connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[0], l2[1])) ;
+	connectors.push_back(cv::Vec4i(l1[0], l1[1], l2[2], l2[3])) ;
+	connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[0], l2[1])) ;
+	connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[2], l2[3])) ;
 
   std::vector<double> slopes ;
 
@@ -225,4 +240,46 @@ bool is_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
 
   return false ;
 
+}
+
+/**
+ * @brief Return a line created by merging two collinear lines.
+ * 
+ * @param l1 
+ * @param l2 
+ * @return Vec4i 
+ */
+Vec4i merge_collinear(Vec4i l1, Vec4i l2) {
+	//if vertical, all points on both lines have same x, so max does not identify a unique point
+	if(is_vertical(l1, 0)) {
+		int min_y = min(min(l1[1], l1[3]), min(l2[1], l2[3])) ;
+		int max_y = max(max(l1[1], l1[3]), max(l2[1], l2[3])) ;
+	
+		return Vec4i(l1[0], min_y, l1[0], max_y) ;
+	}
+
+	if(is_horizontal(l1, 0)) {
+		int min_x = min(min(l1[0], l1[2]), min(l2[0], l2[2])) ;
+		int max_x = max(max(l1[0], l1[2]), max(l2[0], l2[2])) ;
+	
+		return Vec4i(min_x, l1[1], l1[0], max_x) ;
+	}
+
+	int min_x = min(min(l1[0], l1[2]), min(l2[0], l2[2])) ;
+	int max_x = max(max(l1[0], l1[2]), max(l2[0], l2[2])) ;
+	int max_x_pt_y ;
+
+	if(l1[0] == max_x) max_x_pt_y = l1[1] ; 
+	if(l1[2] == max_x) max_x_pt_y = l1[3] ; 
+	if(l2[0] == max_x) max_x_pt_y = l2[1] ; 
+	if(l2[2] == max_x) max_x_pt_y = l2[3] ; 
+
+	int min_x_pt_y ;
+
+	if(l1[0] == min_x) min_x_pt_y = l1[1] ; 
+	if(l1[2] == min_x) min_x_pt_y = l1[3] ; 
+	if(l2[0] == min_x) min_x_pt_y = l2[1] ; 
+	if(l2[2] == min_x) min_x_pt_y = l2[3] ; 
+
+	return Vec4i(min_x, min_x_pt_y, max_x, max_x_pt_y) ;
 }

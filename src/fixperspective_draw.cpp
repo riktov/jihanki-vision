@@ -17,6 +17,7 @@ using namespace cv ;
 
 #include "display.hpp"
 #include "lines.hpp"
+#include "perspective_lines.hpp"
 
 /**
  * @brief Draw the bounding line segments, and the full quadrilateral made be extending those segments
@@ -25,7 +26,7 @@ using namespace cv ;
  * @param bounds_tblr vector of 4 points
  * @param rect_color color for the quadrilateral
  */
-void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
+void plot_bounds(Mat img, const std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
 	if (bounds_tblr.empty()) {
 		std::cout << "bounds is empty" << std::endl ;
 		return ;	
@@ -89,7 +90,7 @@ void plot_bounds(Mat img, std::vector<Vec4i> bounds_tblr, Scalar rect_color) {
  * @param img Ref because image itself is replaced using cvtColor
  * @param rc 
  */
-void display_margins(Mat &img, Rect rc) {
+void plot_margins(Mat &img, Rect rc) {
 	Mat img_inner = img(rc).clone();
 
 	cvtColor(img_inner, img_inner, COLOR_BGR2GRAY) ;
@@ -104,4 +105,45 @@ void display_margins(Mat &img, Rect rc) {
 	line(img, Point2i(rc.x + rc.width, rc.y), rc.br(), Scalar(1, 100, 255), 20) ;	//right
 	line(img, Point2i(rc.x, rc.y + rc.height), rc.br(), Scalar(1, 100, 255), 20) ;	//bottom
 
+}
+
+/**
+ * @brief 
+ * 
+ * @param img 
+ * @param lines 
+ */
+void plot_lines(Mat img, const std::vector<Vec4i> lines, Scalar color) {
+	for(auto lin : lines) {
+		// std::cout << lin << std::endl ;
+		line(img, Point(lin[0], lin[1]), Point(lin[2], lin[3]), color, 4) ;
+	}
+}
+
+void plot_lines(cv::Mat img, const std::vector<perspective_line> plines, cv::Scalar color) {
+	std::vector<Vec4i> lines ;
+	/*
+	std::transform(plines.begin(), plines.end(), lines.begin(), [](perspective_line plin){
+		return plin.line ;
+	}) ;
+	*/
+	for(auto plin : plines) {
+		lines.push_back(plin.line) ;
+	}
+	plot_lines(img, lines, color) ;
+}
+
+void plot_lines(cv::Mat img, const std::pair<perspective_line, perspective_line> plines, cv::Scalar color) {
+	std::vector<Vec4i> lines ;
+	lines.push_back(plines.first.line) ;	
+	lines.push_back(plines.second.line) ;
+
+	plot_lines(img, lines, color) ;	
+}
+
+void annotate_plines(Mat img, const std::vector<perspective_line> plines) {
+	for(auto plin : plines) {
+		std::string label = std::to_string(plin.slope) + ":" + std::to_string(plin.zero_intercept) ;
+		cv::putText(img, label, Point(plin.line[0], plin.line[1]), FONT_HERSHEY_SIMPLEX, 2, Scalar(255, 255, 2)) ;
+	}
 }

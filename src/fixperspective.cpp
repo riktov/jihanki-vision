@@ -1,3 +1,14 @@
+/**
+ * @file fixperspective.cpp
+ * @author Paul Richter (paul@sagasoda.com)
+ * @brief Main module for the fixperspective program.
+ * @version 0.1
+ * @date 2022-07-15
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #if CV_VERSION_MAJOR >= 4
 #include <opencv4/opencv2/highgui.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
@@ -18,9 +29,11 @@
 #include <libgen.h>
 
 #include "lines.hpp"
+#include "perspective_lines.hpp"
+
 
 #ifdef USE_GUI
-#include "fixperspective_display.hpp"
+#include "fixperspective_draw.hpp"
 #include "display.hpp"
 #endif
 
@@ -29,6 +42,8 @@
 //#define VERBOSE_MESSAGE(msg) if(cmdopt_verbose) { std::cout << msg ;}
 
 using namespace cv ;
+
+
 
 /* local function declarations */
 int process_file(char *src_file, const char *dest_file) ;
@@ -43,6 +58,11 @@ std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) ;
 std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) ;
 std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) ;
+Mat find_dense_areas(Mat img_edges) ;
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int gap) ;
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> lines, int gap) ;
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int gap) ;
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> lines, int gap) ;
 
 #ifdef USE_EXIV2
 bool copy_exif(std::string src_path, std::string dest_path) ;
@@ -52,6 +72,7 @@ bool copy_exif(std::string src_path, std::string dest_path) ;
 //std::vector<int> histogram(std::vector<int> vals) ;
 //void draw_drink_separator_lines(Mat img, std::vector<int> runlengths, Point offset) ;
 //std::vector<int> get_drink_columns(Mat img) ;
+
 
 
 
@@ -133,12 +154,12 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	int num_file_args = argc - optind - 1 ;
+	// int num_file_args = argc - optind - 1 ;
 
-	if (num_file_args < 1) {
-		std::cout << "No input files" << std::endl ; 
-		help() ;
-	}
+	// if (num_file_args < 1) {
+	// 	std::cout << "No input files" << std::endl ; 
+	// 	help() ;
+	// }
 	
 	for (int idx = optind ; idx < argc ; idx++) {
 		char *filename ;
@@ -170,81 +191,290 @@ int process_file(char *filename, const char *dest_file) {
 	} else {
 		if(cmdopt_verbose) {
 			std::cout << std::endl << "Read image file: " << filename << std::endl ;
+			std::cout << "Dimensions (cols x rows): " << src.cols << " : " << src.rows << std::endl ;
 		}
 	}
 
-	/*
-	int left_margin = src.cols / 4 ;
+	//add images to this dict, we can show them at the end,
+	//or write them out to files on a headless system
+	std::map<std::string, Mat> feedback_image_of ;
+
+	//prepare the images
+  //convert to value or hue channel?
+  //hue generally gives better results, but is weak if the machine is white.
+	
+	//gray is a little different from the value channel
+	Mat img_hsv, img_gray ;
+	cvtColor(src, img_gray, COLOR_BGR2GRAY) ;
+
+	cvtColor(src, img_hsv, COLOR_BGR2HSV) ;	//we will overwrite with just the hue channel
+
+	std::vector<Mat> hsv_planes, bgr_planes;
+
+	split(img_hsv, hsv_planes );
+	Mat img_hue = hsv_planes[0] ;
+	Mat img_val = hsv_planes[2] ;
+
+	split(src, bgr_planes) ;
+	Mat img_blue = bgr_planes[0] ;
+	Mat img_green = bgr_planes[1] ;
+	Mat img_red = bgr_planes[2] ;
+
+	Mat imgs[] = {
+		img_gray,
+		img_hue,
+		// img_val, 
+		// img_blue,
+		// img_green,
+		// img_red
+	} ;
+
+	// blur(img_gray, img_gray, Size(3, 3));
+	// blur(img_hue, img_hue, Size(3, 3));
+
+	//a test image for plotting lines
+	Mat img_plot ;
+	cvtColor(src, img_plot, COLOR_BGR2GRAY) ;
+	cvtColor(img_plot, img_plot, COLOR_GRAY2BGR) ;
+
+	//NEW FROM HERE
+	int left_margin = src.cols / 4 ;	//4
 	int right_margin = src.cols - left_margin ;
 	int top_margin = src.rows / 6 ;
 	int bottom_margin = src.rows - top_margin ;
 
-	display_margins(src, Rect(left_margin, top_margin, src.cols - left_margin - left_margin, src.rows - top_margin - top_margin)) ;
-	imshow("Margins" , scale_for_display(src)) ;
-	waitKey() ;
-	return -1 ;
-	*/
+	
+	
 
-  //convert to value or hue channel?
-  //hue generally gives better results, but is weak if the machine is white.
-	Mat img_val, img_hue ;
-
-	cvtColor(src, img_val, COLOR_BGR2GRAY) ;
-	cvtColor(src, img_hue, COLOR_BGR2HSV) ;	//we will overwrite with just the hue channel
-
-	std::vector<Mat> hsv_planes;
-
-	split(img_hue, hsv_planes );
-	img_hue = hsv_planes[0] ;
-
-	Mat imgs[] = {
-		img_val, 
-		img_hue
+	const char *channel_img_names[] = {
+		"gray (C)", "hue(Y)", "val (M)", "blue", "green", "red"
 	} ;
 
-	blur(img_hue, img_hue, Size(3, 3));
+	const Scalar colors[] = {
+		Scalar(255, 255, 0),	//cyan
+		Scalar(255, 0, 255),	//magenta
+		Scalar(0, 255, 255),	//yellow
+		Scalar(255, 0, 0),
+		Scalar(0, 255, 0),
+		Scalar(0, 0, 255)
+	} ;
 
-	// for(auto const img : imgs ) {
-
-	//Try to get the maximal quadrilateral bounds
-
-	//Mat img_gray_reduced, img_color_reduced ;
-	//img_gray_reduced = src_gray.clone() ;
-	//img_gray_reduced = Scalar(0, 0, 0) ;
-
-
-
-
-	if(cmdopt_verbose) { std::cout << std::endl << "-------Trying to detect on hue" << std::endl ; }
-	auto bounding_lines_hue = detect_bounding_lines_iterate_scale(img_hue) ;
-
-	if(cmdopt_verbose) { std::cout << std::endl << "-------Trying to detect on val" << std::endl ; }
-	auto bounding_lines_val = detect_bounding_lines_iterate_scale(img_val) ;
+	std::vector<Vec4i> left_lines, right_lines, top_lines, bottom_lines ;
+	std::vector<Vec4i> lines ;
 	
-	if(bounding_lines_hue.empty() && bounding_lines_val.empty()) {
-		std::cout << "No good lines at all!! - bailing." << std::endl ;
-		return -1 ;
+	// imshow("gray" , scale_for_display(img_gray)) ;
+	// imshow("val" , scale_for_display(img_val)) ;
+	// waitKey() ;
+	// return 0 ;
+	Mat img_dense_combined ;
+	Mat img_edges_combined ;
+	std::vector<Mat> channel_images_edges ;
+
+	
+	//Get canny corners for each channel, 
+	//combine them, and create a dense block mask which can be applied to all channels.
+	//Save the canny images for another pass to detect lines on each of them
+	for(auto img: imgs) {
+		Mat img_edges;
+		Canny(img, img_edges, 30, 250, 3) ; //30, 250, 3
+
+		img_edges.copyTo(img_edges_combined, img_edges) ;	//only for denseblock mask
+		channel_images_edges.push_back(img_edges) ;
+	}
+
+	img_dense_combined = find_dense_areas(img_edges_combined) ;
+	bitwise_not(img_dense_combined, img_dense_combined) ;
+
+	feedback_image_of["Dense Block Mask"] = img_dense_combined ;
+
+	//We use multiple channels to get the denseblock mask,
+	//but use only the gray channel to detect lines 
+
+	Mat img_edges_gray = channel_images_edges.at(0) ;
+
+	channel_images_edges.clear() ;
+	channel_images_edges.push_back(img_edges_gray) ;
+
+
+	//declare the variables that will accumulate through the channels, below
+	std::vector<perspective_line> plines_combined_horizontal, plines_combined_vertical ;
+	
+	int i = 0 ;
+	
+	for(auto img : channel_images_edges) {
+		Mat img_edges_masked;
+		
+		img.copyTo(img_edges_masked, img_dense_combined) ;
+
+		lines = detect_bounding_lines(img_edges_masked, 0) ;	//aready removes diagonals
+
+		//now separate into vertical and horizontal
+		std::vector<Vec4i> horizontal_lines, vertical_lines ;
+		
+		std::copy_if(lines.begin(), lines.end(), std::back_inserter(horizontal_lines), [](Vec4i lin){
+			return std::abs(lin[0] - lin[2]) > std::abs(lin[1] - lin[3]) ;
+		}) ;
+		std::cout << "Horizontal: " << horizontal_lines.size() << std::endl ;
+
+		std::copy_if(lines.begin(), lines.end(), std::back_inserter(vertical_lines), [](Vec4i lin){
+			return std::abs(lin[0] - lin[2]) < std::abs(lin[1] - lin[3]) ;
+		}) ;
+		std::cout << "Vertical: " << vertical_lines.size() << std::endl ;
+
+
+		
+		//build vectors of perspective_lines, so we can merge and detect off-kilter lines
+		std::vector<perspective_line> horizontal_plines, vertical_plines ;
+		
+		std::cout << "Filling plines: " << std::endl ;
+		fill_perspective_lines(horizontal_plines, horizontal_lines) ;
+		fill_perspective_lines(vertical_plines, vertical_lines) ;
+
+		//accumulate the plines
+		plines_combined_horizontal.insert(plines_combined_horizontal.end(), horizontal_plines.begin(), horizontal_plines.end()) ;
+		plines_combined_vertical.insert(plines_combined_vertical.end(), vertical_plines.begin(), vertical_plines.end()) ;
+
+		
+		/*
+		If, after the first pass, we get lots of bunched lines (such as the button strips), we might
+		block those areas too and do another detection pass.
+		Erode will eliminate all single-width lines but leave eroded lines from the bunched lines.
+		*/
+
+
+
+		//chop up the image into four side strips
+		/*
+		Mat left_side, right_side, top_side, bottom_side ;
+		left_side   = img_masked(Rect(Point2i(0, 0), Point2i(left_margin, img.rows))) ;
+		right_side  = img_masked(Rect(Point2i(right_margin, 0), Point2i(img.cols, img.rows))) ;
+		top_side    = img_masked(Rect(Point2i(0, 0), Point2i(img.cols, top_margin))) ;
+		bottom_side = img_masked(Rect(Point2i(0, bottom_margin), Point2i(img.cols, img.rows))) ;
+		*/
+		// Mat strips[] = {
+		// 	left_side, right_side, top_side, bottom_side
+		// } ;
+
+	
+		/*
+
+		auto left_detected_lines   = detect_bounding_lines(left_side, 0) ;
+		auto right_detected_lines  = detect_bounding_lines(right_side, right_margin) ;
+		auto top_detected_lines    = detect_bounding_lines(top_side, 0) ;
+		auto bottom_detected_lines = detect_bounding_lines(bottom_side, bottom_margin) ;
+
+		left_lines.insert(left_lines.end(), left_detected_lines.begin(), left_detected_lines.end()) ;
+		right_lines.insert(right_lines.end(), right_detected_lines.begin(), right_detected_lines.end()) ;
+		top_lines.insert(top_lines.end(), top_detected_lines.begin(), top_detected_lines.end()) ;
+		bottom_lines.insert(bottom_lines.end(), bottom_detected_lines.begin(), bottom_detected_lines.end()) ;
+		*/
+		
+		/*
+		Canny corners will reveal "dense" areas, which are usually areas with uniformly mottled textures,
+		or the interior of the vending machine display window (From all the container graphics). 
+		We use these to exclude those areas from line detection. 
+		We could also use this in the display strip detection.
+
+		1. Get Canny edges
+		2. Find dense areas, distill them to smooth blocks
+		3. Remove those blocked areas from the canny image itself.
+		4. Canny now has no dense areas, so get Hough lines
+
+		We can also get contours from the dense blocks. 
+		We can assume that a large, somewhat rectangular block near the center of the image is the display window.
+
+		If we use this dense block, we don't need to split up the image in to four images.
+		
+		Also, if there is a dense block that completely borders one wall, we can trim it off 
+		(as deep as goes extends the full length of the wall) from the image entirely.
+		
+		*/
+
+		
+		// continue ;
+		cvtColor(img, img, COLOR_GRAY2BGR) ;
+	
+		//the edge image
+		cvtColor(img_edges_masked, img_edges_masked, COLOR_GRAY2BGR) ;
+		plot_lines(img_edges_masked, horizontal_plines, Scalar(31, 227, 255)) ;
+		plot_lines(img_edges_masked, vertical_plines, Scalar(31, 227, 255)) ;
+
+		annotate_plines(img_edges_masked, horizontal_plines) ;
+		annotate_plines(img_edges_masked, vertical_plines) ;
+
+		std::string label_edges = "Edges " + std::string(channel_img_names[i]) ;
+		imshow(label_edges , scale_for_display(img_edges_masked)) ;
+		/*
+		auto color = colors[i] ;
+		plot_lines(img_plot, left_detected_lines, color) ;
+		plot_lines(img_plot, right_detected_lines, color) ;
+		plot_lines(img_plot, top_detected_lines, color) ;
+		plot_lines(img_plot, bottom_detected_lines, color) ;
+		*/
+		i++ ;
 	}
 
 
+	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
+	std::cout << "Merging collinears" << std::endl ;
+	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, true) ;
+	auto merged_vertical_plines = merge_lines(plines_combined_vertical, false) ;
+
+	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
+	std::cout << "Vert plines after merged: " << merged_vertical_plines.size() << std::endl ;
+	
+	std::cout << "Check convergence from transitions" << std::endl ;
+	slope_transitions(merged_horizontal_plines) ;
+	slope_transitions(merged_vertical_plines) ;
+	
+
+	//Check if we have at least two verticals and horzontals each, or bail
+	if((merged_horizontal_plines.size() < 2) || (merged_vertical_plines.size() < 2)) {
+		std::cout << "Not enough horiz and vert lines detected, bailing" << std::endl ;
+		exit(-19) ;
+	}
 
 
-	Mat transformed_image = transform_perspective(src, bounding_lines_val) ;
+	//select the two best verticals and horizontals
+	//sort by length, and step through until we find two that are sufficiently separated
+	std::cout << "Getting best four bounding lines." << std::endl ;
+	auto best_verticals   = best_vertical_lines(plines_combined_vertical, src.cols * 2 / 3) ;
+	auto best_horizontals = best_horizontal_lines(plines_combined_horizontal, src.rows * 2 / 3) ;
+
+	cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
+	plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
+	plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
+
+	cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
+	plot_lines(img_dense_combined, lines, Scalar(127, 0, 255)) ;
+
+	// return 0;
+
+	imshow("Dense blocks combined" , scale_for_display(img_dense_combined)) ;
+	// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
+	plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
+	
+	
+	imshow("Gray Original" , scale_for_display(img_gray)) ;
+	// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
+
+	// waitKey() ;
+
+	/////////////////////////////////// TEST RETURN //////////////////////////////////////
+	// return 0 ;
+
+
+	Mat transformed_image = transform_perspective(src, best_horizontals.first, best_horizontals.second, best_verticals.first, best_verticals.second) ;
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
-		std::string transformed_window_title = std::string("Corrected on hue") ;
+		std::string transformed_window_title = std::string("Corrected Image") ;
 		imshow(transformed_window_title, scale_for_display(transformed_image)) ;
 
 		//convert to color so we can draw in color on them
 		cvtColor(img_val, img_val, COLOR_GRAY2BGR) ;
 		cvtColor(img_hue, img_hue, COLOR_GRAY2BGR) ;
 
-		std::cout << "Plotting bounds lines" << std::endl ;
-		plot_bounds(img_hue, bounding_lines_hue, Scalar(255, 127, 200)) ;	//purple
-		plot_bounds(img_val, bounding_lines_val, Scalar(127, 200, 255)) ;	//orange
-		imshow("Value (orange)", scale_for_display(img_val)) ;
-		imshow("Hue (purple)" , scale_for_display(img_hue)) ;
 		waitKey() ;
 	}
 	#endif
@@ -255,7 +485,7 @@ int process_file(char *filename, const char *dest_file) {
 			std::cout << "Writing to:[" << dest_file << "]" << std::endl ;
 		}
 		try {
-			//imwrite(dest_file, transformed_image) ;
+			imwrite(dest_file, transformed_image) ;
 			#ifdef USE_EXIV2
 			copy_exif(filename, dest_file) ;
 			#endif
@@ -265,9 +495,105 @@ int process_file(char *filename, const char *dest_file) {
 		}
 	}
 
-
+	std::cout << "Finished processing: " << filename << std::endl ;
 
 	return 0 ;
+}
+
+/**
+ * @brief Detect good lines on a canny edge image
+ * 
+ * @param img_cann 
+ * @param strip_offset 
+ * @return std::vector<Vec4i> 
+ */
+std::vector<Vec4i> detect_bounding_lines(Mat img_cann, int strip_offset) {
+	// Mat cann ;
+	std::vector<Vec4i> lines ;
+	
+	const int hough_threshold = 250 ;	//150, 200
+	//with new algorithm, raising max_gap to 100 helps
+	const int max_gap = 200 ; //70
+
+	bool is_vertical = img_cann.rows > img_cann.cols ;
+
+	const int min_vertical_length = img_cann.rows / 4 ; //6
+	const int min_horizontal_length = img_cann.cols / 6 ; //10
+
+	auto min_length = is_vertical ? min_horizontal_length : min_vertical_length ;
+
+	// HoughLinesP(img_cann, lines, 1, CV_PI/45, hough_threshold, min_length, max_gap) ;
+	HoughLinesP(img_cann, lines, 1, CV_PI/180, hough_threshold, min_length, max_gap) ;
+
+	int num_all_detected = -1 ;
+	if(cmdopt_verbose) {
+		num_all_detected = lines.size() ;
+	}
+	
+	//remove diagonal lines
+
+	auto slant_iter = std::remove_if(lines.begin(), lines.end(),
+		[](Vec4i lin){ return slant(lin) > 0.1 ; }) ;
+	lines.erase(slant_iter, lines.end()) ;
+
+	if(cmdopt_verbose) {
+		int num_filtered = lines.size() ;
+		std::cout << num_all_detected - num_filtered << " diagonals removed." << std::endl ;
+	}
+
+
+	return lines ;
+
+	
+	
+
+	if (is_vertical) {
+		//collect the vertical lines from the ortho lines
+		auto iter = std::remove_if(lines.begin(), lines.end(),
+			[](const Vec4i lin) { return abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ; }) ;
+		lines.erase(iter, lines.end()) ;
+		// std::cout << "Found " << lines.size() << " lines in " ;
+
+		if(strip_offset != 0) {
+			// std::cout << "right side" << std::endl ; 
+			std::transform(lines.begin(), lines.end(), lines.begin(),
+				/*
+				[strip_offset](Vec4i lin) -> Vec4i { 
+					return lin + Vec4i(0, 0, strip_offset, 0) ; 
+				}) ;
+				*/
+			
+				[strip_offset](Vec4i lin) -> Vec4i { 
+					lin[0] = lin[0] + strip_offset ;
+					lin[2] = lin[2] + strip_offset ;
+					return lin ; 
+				}) ;
+		} else {
+			// std::cout << "left side" << std::endl ; 
+		}
+
+	} else {
+		//collect the horizontal lines from the ortho lines
+		auto iter = std::remove_if(lines.begin(), lines.end(),
+			[](const Vec4i lin) { return abs(lin[0] - lin[2]) < abs(lin[1] - lin[3]) ; }) ;
+		lines.erase(iter, lines.end()) ;
+		// std::cout << "Found " << lines.size() << " lines in " ;
+		
+		if(strip_offset != 0) {
+			std::transform(lines.begin(), lines.end(), lines.begin(),
+				[strip_offset](Vec4i lin) -> Vec4i { 
+					lin[1] = lin[1] + strip_offset ;
+					lin[3] = lin[3] + strip_offset ;
+					return lin ; 
+				}) ;
+			// std::cout << "bottom side" << std::endl ; 
+		} else {
+			// std::cout << "top side" << std::endl ; 
+		}
+		
+	}
+	//filter out boundary lines
+	return lines ;
 }
 
 
@@ -278,7 +604,7 @@ int process_file(char *filename, const char *dest_file) {
  * @param hough_threshold For HoughLinesP
  * @return std::vector<Vec4i> 
  */
-std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold) {
+std::vector<Vec4i> xxxdetect_bounding_lines(Mat src, int hough_threshold) {
 	std::vector<Vec4i> lines, vertical_lines, horizontal_lines ;
 	std::vector<Vec4i> boundary_lines ;
 
@@ -511,7 +837,7 @@ std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) {
 	if (is_bounding_lines_detected) {
 		//scale the lines back up to full size so we can use them on the full size image
 		std::transform(bounding_lines.begin(), bounding_lines.end(), bounding_lines.begin(),
-			[scale](Vec4i pt) -> Vec4i { return pt * scale ; }) ;
+			[scale](Vec4i lin) -> Vec4i { return lin * scale ; }) ;
 
 		return bounding_lines ;
 	} else {
@@ -544,8 +870,10 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 
 	//open dest_file for writing exif data
 	Exiv2::Image::AutoPtr dest_image = Exiv2::ImageFactory::open(dest_path);
-  assert(dest_image.get() != 0);
+
+	assert(dest_image.get() != 0);
 	 
+	std::cout << "Writing EXIF" << std::endl ;
 	dest_image->setExifData(exifData);
 	dest_image->writeMetadata();
 
@@ -812,4 +1140,166 @@ std::pair<Vec4i, Vec4i> topmost_bottommost_lines_iter(std::vector<Vec4i> lines, 
 	}
 
 	return std::make_pair(topmost_line, bottommost_line) ;
+}
+
+/**
+ * @brief Create an image showing dense areas which have lots of edge dots, and merge them into big blotches
+ * 
+ * @param img_edges Monochrome image with Canny edges
+ * @return Mat 
+ */
+Mat find_dense_areas(Mat img_edges) {
+	Mat img_working = img_edges.clone();
+
+
+	const auto dilation_type = MORPH_ERODE ;
+	auto dilation_size = 5 ;	//2
+	Mat element = getStructuringElement(dilation_type,
+						Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+						Point( dilation_size, dilation_size ) );
+
+	dilation_size = 1 ;
+	Mat element2 = getStructuringElement(dilation_type,
+						Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+						Point( dilation_size, dilation_size ) );
+
+	// dilate(img_edges, img_working, element );
+	// threshold(img_edges, img_working, 31, 255, THRESH_BINARY) ;
+	// erode(img_working, img_working, element );
+	// erode(img_working, img_working, element );
+	// erode(img_working, img_working, element );
+
+
+	// bitwise_not(cann, cann) ;
+	int pyr_factor = 3;	//4
+	// pyrDown(cann, cann, Size(cann.cols / pyr_factor, cann.rows / pyr_factor));
+	// pyrUp(cann, cann, Size(cann.cols, cann.rows)) ;
+
+	// auto shrunksize = Size(img_working.cols / pyr_factor, img_working.rows / pyr_factor) ;
+	// std::cout << shrunksize << std::endl ;
+
+	// std::cout << "ssize.width: " << img_working.cols << std::endl ;
+	// std::cout << "std::abs(dsize.width*2 - ssize.width): " << std::abs(shrunksize.width *2 - img_working.cols) << std::endl ;
+	for(int i = 0 ; i <  pyr_factor ; i++) {
+		pyrDown(img_working, img_working);
+	}
+
+	blur(img_working, img_working, Size(3, 3)) ;
+	dilate(img_working, img_working, element );
+	erode(img_working, img_working, element);
+	dilate(img_working, img_working, element );
+	erode(img_working, img_working, element);
+
+	erode(img_working, img_working, element2);
+	erode(img_working, img_working, element2);
+	//OK results: blur, dilate, threshold, erode
+	//erode, blur, dilate, threshold : nothing
+
+	// threshold(img_working, img_working, 31, 255, THRESH_BINARY) ;
+
+	std::cout << "Image size after " << pyr_factor << " pyrDown: " << img_working.size() << std:: endl ;  
+	for(int i = 0 ; i <  pyr_factor ; i++) {
+		pyrUp(img_working, img_working);
+	}
+
+	threshold(img_working, img_working, 31, 255, THRESH_BINARY) ;
+
+/*	GOOD RESULTS:
+	down, blur, dilate, erode, up, thresh
+	down, blur, dilate, erode+, up, thresh
+	down 4, blur 3, dilate 5, erode, dilate, erode, up, thresh 31!!!!
+
+*/
+	
+
+	return img_working(Rect(0, 0, img_edges.cols, img_edges.rows)) ;
+}
+
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int min_space) {
+	//sort from longest to shortest
+	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
+		return len_sq(l1) > len_sq(l2) ;		
+	}) ;
+
+	Vec4i leftmost, rightmost ;
+	
+	if(mid_x(lines.at(0)) < mid_x(lines.at(1))) {
+		leftmost = lines.at(0) ;
+		rightmost = lines.at(1) ;
+	} else {
+		leftmost = lines.at(1) ;
+		rightmost = lines.at(0) ;
+	}
+
+	int space ;
+
+	for(auto lin : lines) {
+		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
+		if(mid_x(lin) < mid_x(leftmost)) {
+			leftmost = lin ;
+		}
+
+		if(mid_x(lin) > mid_x(rightmost)) {
+			rightmost = lin ;
+		}
+
+		space = mid_x(rightmost) - mid_x(leftmost) ;
+		if(space >= min_space) {
+			return std::make_pair(leftmost, rightmost) ;
+		}
+	}
+	return std::make_pair(leftmost, rightmost) ;
+}
+
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int min_space) {
+	//sorting from longest to shortest
+	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
+		return len_sq(l1) > len_sq(l2) ;		
+	}) ;
+
+	Vec4i topmost, bottommost ;
+	
+	if(mid_y(lines.at(0)) < mid_y(lines.at(1))) {
+		topmost = lines.at(0) ;
+		bottommost = lines.at(1) ;
+	} else {
+		topmost = lines.at(1) ;
+		bottommost = lines.at(0) ;
+	}
+
+	int space ;
+
+	for(auto lin : lines) {
+		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
+		if(mid_y(lin) < mid_y(topmost)) {
+			topmost = lin ;
+		}
+
+		if(mid_y(lin) > mid_y(topmost)) {
+			bottommost = lin ;
+		}
+
+		space = mid_y(bottommost) - mid_y(topmost) ;
+		if(space >= min_space) {
+			return std::make_pair(topmost, bottommost) ;
+		}
+	}
+	return std::make_pair(topmost, bottommost) ;
+}
+
+
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> plines, int min_space) {
+	std::vector<Vec4i> lines ;
+	for(auto plin : plines) {
+		lines.push_back(plin.line) ;
+	}
+	return best_vertical_lines(lines, min_space) ;
+}
+
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> plines, int min_space) {
+	std::vector<Vec4i> lines ;
+	for(auto plin : plines) {
+		lines.push_back(plin.line) ;
+	}
+	return best_horizontal_lines(lines, min_space) ;
 }
