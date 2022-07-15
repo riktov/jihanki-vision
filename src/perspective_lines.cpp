@@ -58,6 +58,7 @@ perspective_line::perspective_line(Vec4i lin)
 }
 
 void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) {
+	if(lines.size() < 1) { return ; }
 	Vec4i any_line = lines.front() ;
 	bool is_horizontal = abs(any_line[0] - any_line[2]) > abs(any_line[1] - any_line[3]) ;
 

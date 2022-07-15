@@ -414,6 +414,10 @@ int process_file(char *filename, const char *dest_file) {
 		i++ ;
 	}
 
+	if((plines_combined_horizontal.size() < 2) || (plines_combined_vertical.size() < 2)) {
+		std::cout << "Not enough horiz and vert lines before merge and converge, bailing" << std::endl ;
+		exit(-19) ;
+	}
 
 	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
 	std::cout << "Merging collinears" << std::endl ;
@@ -430,7 +434,7 @@ int process_file(char *filename, const char *dest_file) {
 
 	//Check if we have at least two verticals and horzontals each, or bail
 	if((merged_horizontal_plines.size() < 2) || (merged_vertical_plines.size() < 2)) {
-		std::cout << "Not enough horiz and vert lines detected, bailing" << std::endl ;
+		std::cout << "Not enough horiz and vert lines after merge and converge, bailing" << std::endl ;
 		exit(-19) ;
 	}
 
@@ -455,7 +459,7 @@ int process_file(char *filename, const char *dest_file) {
 	plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
 	
 	
-	imshow("Gray Original" , scale_for_display(img_gray)) ;
+	imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
 	// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
 
 	// waitKey() ;
