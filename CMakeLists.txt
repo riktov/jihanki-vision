@@ -9,7 +9,7 @@ find_package(OpenCV REQUIRED)
 
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)
-    pkg_check_modules(EXIV2 exiv2>0.1)
+    pkg_check_modules(EXIV2 exiv2)
     pkg_check_modules(GTEST gtest>0.1)
     pkg_check_modules(GMOCK gmock>0.1)
 endif()
