@@ -154,12 +154,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	// int num_file_args = argc - optind - 1 ;
-
-	// if (num_file_args < 1) {
-	// 	std::cout << "No input files" << std::endl ; 
-	// 	help() ;
-	// }
+	if (optind == argc) {
+		std::cout << "No input files" << std::endl ; 
+		help() ;
+	}
 	
 	for (int idx = optind ; idx < argc ; idx++) {
 		char *filename ;
@@ -171,6 +169,7 @@ int main(int argc, char **argv) {
 			dest_path << dest_dir << "/" << basename(filename) ;
 		}
 	
+		// std::cout << filename << std::endl ;
 		process_file(filename, dest_path.str().c_str()) ;
 	}
 }
