@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
 			dest_path << dest_dir << "/" << basename(filename) ;
 		}
 	
-	process_file(filename, dest_path.str().c_str()) ;
+		process_file(filename, dest_path.str().c_str()) ;
 	}
 }
 
@@ -253,16 +253,6 @@ int process_file(char *filename, const char *dest_file) {
 	cvtColor(img_plot, img_plot, COLOR_GRAY2BGR) ;
 
 	//NEW FROM HERE
-	int left_margin = src.cols / 4 ;	//4
-	int right_margin = src.cols - left_margin ;
-	int top_margin = src.rows / 6 ;
-	int bottom_margin = src.rows - top_margin ;
-
-	
-	
-
-
-
 	std::vector<Vec4i> left_lines, right_lines, top_lines, bottom_lines ;
 	std::vector<Vec4i> lines ;
 	
@@ -965,5 +955,5 @@ std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> plin
  * @return int 
  */
 int verify_correction(Mat img) {
-
+	return 0 ;
 }
