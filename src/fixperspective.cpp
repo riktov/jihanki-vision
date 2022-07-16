@@ -337,6 +337,8 @@ int process_file(char *filename, const char *dest_file) {
 	
 		//the edge image
 		cvtColor(img_edges_masked, img_edges_masked, COLOR_GRAY2BGR) ;
+
+		#ifdef USE_GUI
 		plot_lines(img_edges_masked, horizontal_plines, Scalar(31, 227, 255)) ;
 		plot_lines(img_edges_masked, vertical_plines, Scalar(31, 227, 255)) ;
 
@@ -345,6 +347,7 @@ int process_file(char *filename, const char *dest_file) {
 
 		std::string label_edges = "Edges " + std::string(channel_img_names[i]) ;
 		imshow(label_edges , scale_for_display(img_edges_masked)) ;
+		#endif
 		/*
 		auto color = colors[i] ;
 		plot_lines(img_plot, left_detected_lines, color) ;
