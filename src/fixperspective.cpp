@@ -389,12 +389,7 @@ int process_file(char *filename, const char *dest_file) {
 	auto best_verticals   = best_vertical_lines(plines_combined_vertical, src.cols * 2 / 3) ;
 	auto best_horizontals = best_horizontal_lines(plines_combined_horizontal, src.rows * 2 / 3) ;
 
-	cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
-	plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
-	plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
 
-	cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
-	plot_lines(img_dense_combined, lines, Scalar(127, 0, 255)) ;
 
 	// return 0;
 
@@ -410,6 +405,13 @@ int process_file(char *filename, const char *dest_file) {
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
+		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
+		plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
+		plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
+
+		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
+		plot_lines(img_dense_combined, lines, Scalar(127, 0, 255)) ;
+
 		imshow("Dense blocks combined" , scale_for_display(img_dense_combined)) ;
 		// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
 		plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
