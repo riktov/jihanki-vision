@@ -398,13 +398,7 @@ int process_file(char *filename, const char *dest_file) {
 
 	// return 0;
 
-	imshow("Dense blocks combined" , scale_for_display(img_dense_combined)) ;
-	// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
-	plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
-	
-	
-	imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
-	// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
+
 
 	// waitKey() ;
 
@@ -416,6 +410,12 @@ int process_file(char *filename, const char *dest_file) {
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
+		imshow("Dense blocks combined" , scale_for_display(img_dense_combined)) ;
+		// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
+		plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
+		imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
+		// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
+
 		std::string transformed_window_title = std::string("Corrected Image") ;
 		imshow(transformed_window_title, scale_for_display(transformed_image)) ;
 
