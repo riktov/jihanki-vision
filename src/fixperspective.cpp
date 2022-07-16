@@ -505,6 +505,7 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 	}
 	*/	
 
+
 	//copy exif data from filename to dest_file 
 	//Save the exiv2 data before writing
 	Exiv2::Image::AutoPtr src_image = Exiv2::ImageFactory::open(src_path);
@@ -512,6 +513,13 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 	src_image->readMetadata();
 
 	Exiv2::ExifData &exifData = src_image->exifData();
+
+	/*
+	for (auto i = exifData.begin(); i != exifData.end(); ++i) {
+		const char* tn = i->typeName();
+		std::cout << tn << " " << i->key() << ": " << i->value() << std::endl ;
+	}
+	*/
 
 	if (exifData.empty()) {
 		std::cout << "No EXIF data in image" << std::endl ;
