@@ -437,7 +437,18 @@ int process_file(char *filename, const char *dest_file) {
 		imshow("Merged (only) lines", scale_for_display(img_merged_lines)) ;		
 
 		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
-		plot_lines(img_dense_combined, plines_combined_horizontal, Scalar(127, 0, 255)) ;
+
+		std::vector<Vec4i> full_lines_horizontal, full_lines_vertical ;
+		for(auto lin: plines_combined_horizontal) {
+			full_lines_horizontal.push_back(lin.full_line()) ;
+		}
+		/*
+		for(auto lin: plines_combined_vertical) {
+			full_lines_horizontal.push_back(lin.full_line()) ;
+		}
+		*/
+
+		plot_lines(img_dense_combined, full_lines_horizontal, Scalar(127, 0, 255)) ;
 		plot_lines(img_dense_combined, plines_combined_vertical, Scalar(127, 0, 255)) ;
 
 		label = "Blocks with unmerged lines, H:" + 

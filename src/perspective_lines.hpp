@@ -15,6 +15,7 @@
 struct perspective_line {
 	cv::Vec4i line ;
 	int slope ;
+	float angle ;
 	int zero_intercept ;
 	int max_intercept ;
 
@@ -22,6 +23,7 @@ struct perspective_line {
 
 	//ctor
 	perspective_line(cv::Vec4i) ;
+	cv::Vec4i full_line() ;
 } ;
 
 void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) ;

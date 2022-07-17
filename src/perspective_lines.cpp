@@ -60,8 +60,18 @@ perspective_line::perspective_line(Vec4i lin)
 			this->max_intercept  = lin[0] + ((this->max_edge - lin[1]) / this->slope) ;
 		}
 	}
+	this->angle = angle_deg(this->line) ;
 }
 
+Vec4i perspective_line::full_line() {
+	bool is_horizontal = abs(this->line[0] - this->line[2]) > abs(this->line[1] - this->line[3]) ;
+
+	if(is_horizontal) {
+		return Vec4i(0, this->zero_intercept, this->max_edge, this->max_intercept) ;
+	} else {
+		return Vec4i(this->zero_intercept, 0, this->max_intercept, this->max_edge) ;
+	}
+}
 
 void xxxfill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) {
 	if(lines.size() < 1) { return ; }

@@ -2,6 +2,7 @@
 #include <iostream>
 //#include <algorithm>
 
+
 #if CV_VERSION_MAJOR >= 4
 #include <opencv4/opencv2/core.hpp>
 #else
@@ -52,6 +53,34 @@ float slant(cv::Vec4i line) {
 
 	return (numer * 1.0) / denom ;
 }
+
+float angle_deg(Vec4i line) {
+	int dx = line[0] - line[2] ;
+	int dy = line[1] - line[3] ;
+
+	bool is_vertical = abs(dy) > abs(dx) ;
+
+	float slope ;
+	if(is_vertical) {	//vertical
+		if(dx == 0) { return 0.0 ; }
+		slope = dy / dx ;
+	} else {
+		if(dy == 0) { return 0.0 ; }
+		slope = dx / dy ;
+	}
+
+	//from here, just blindly hacking to get the expected results.
+	float angle = (atan(slope) * 180 / M_PI) - 90 ;
+	if(angle < -90) {
+		angle += 180 ;
+	}
+
+	if(!is_vertical) {
+		angle *= -1 ;
+	}
+	return angle ;
+}
+
 
 /**
  * @brief Return a signed integer representing the slope in the orientation of the line. Inverse of slant, with sign.
