@@ -60,27 +60,14 @@ float angle_deg(Vec4i line) {
 
 	bool is_vertical = abs(dy) > abs(dx) ;
 
-	float slope ;
+	float angle ;
 	if(is_vertical) {	//vertical
-		if(dx == 0) { return 0.0 ; }
-		slope = dy / dx ;
+		angle = atan((-1.0 * dx) / dy) ;
 	} else {
-		if(dy == 0) { return 0.0 ; }
-		slope = dx / dy ;
+		angle = atan((1.0 * dy) / dx) ; 
 	}
-
-	//from here, just blindly hacking to get the expected results.
-	float angle = (atan(slope) * 180 / M_PI) - 90 ;
-	if(angle < -90) {
-		angle += 180 ;
-	}
-
-	if(!is_vertical) {
-		angle *= -1 ;
-	}
-	return angle ;
+	return angle * 180 / M_PI ;
 }
-
 
 /**
  * @brief Return a signed integer representing the slope in the orientation of the line. Inverse of slant, with sign.
