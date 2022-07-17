@@ -329,6 +329,12 @@ int process_file(char *filename, const char *dest_file) {
 		// fill_perspective_lines(horizontal_plines, horizontal_lines) ;
 		// fill_perspective_lines(vertical_plines, vertical_lines) ;
 
+		std::cout << "Within channel loop: Horizontal plines in slope-intercept format" << std::endl ;
+		for(auto plin : horizontal_plines) {
+			std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
+		}
+		std::cout << std::endl ;
+
 		//accumulate the plines from this pass
 		plines_combined_horizontal.insert(plines_combined_horizontal.end(), horizontal_plines.begin(), horizontal_plines.end()) ;
 		plines_combined_vertical.insert(plines_combined_vertical.end(), vertical_plines.begin(), vertical_plines.end()) ;
@@ -357,6 +363,7 @@ int process_file(char *filename, const char *dest_file) {
 		exit(-19) ;
 	}
 
+	/*
 	std::cout << "Horizontal plines in slope-intercept format" << std::endl ;
 	for(auto plin : plines_combined_horizontal) {
 		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
@@ -368,10 +375,11 @@ int process_file(char *filename, const char *dest_file) {
 		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
 	}
 	std::cout << std::endl ;
+	*/
 
 	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
 	std::cout << "Merging horizontal collinears" << std::endl ;
-	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, true) ;
+	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, false) ;
 	std::cout << "Merging vertical collinears" << std::endl ;
 	auto merged_vertical_plines = merge_lines(plines_combined_vertical, false) ;
 
@@ -412,9 +420,10 @@ int process_file(char *filename, const char *dest_file) {
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
+		std::string label ;
 		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
 		//make any needed clones here before drawing on it.
-		Mat img_merged_lines = img_gray.clone() ;
+		Mat img_merged_lines = Mat::zeros(img_gray.size(), CV_8UC3) ;
 
 
 		plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
@@ -423,13 +432,18 @@ int process_file(char *filename, const char *dest_file) {
 
 		plot_lines(img_merged_lines, merged_horizontal_plines, Scalar(255, 127, 255)) ;
 		plot_lines(img_merged_lines, merged_vertical_plines, Scalar(255, 127, 255)) ;
+		annotate_plines(img_merged_lines, merged_horizontal_plines) ;
+		annotate_plines(img_merged_lines, merged_vertical_plines) ;
 		imshow("Merged (only) lines", scale_for_display(img_merged_lines)) ;		
 
 		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
 		plot_lines(img_dense_combined, plines_combined_horizontal, Scalar(127, 0, 255)) ;
 		plot_lines(img_dense_combined, plines_combined_vertical, Scalar(127, 0, 255)) ;
 
-		imshow("Dense blocks with lines before merge" , scale_for_display(img_dense_combined)) ;
+		label = "Blocks with unmerged lines, H:" + 
+			std::to_string(plines_combined_horizontal.size()) + ", V:" + 
+			std::to_string(plines_combined_vertical.size());
+		imshow(label , scale_for_display(img_dense_combined)) ;
 
 		// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
 		// plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;

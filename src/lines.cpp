@@ -66,10 +66,16 @@ int normalized_slope(Vec4i line) {
 	if(dx == 0) { return 0 ; }
 	if(dy == 0) { return 0 ; }
 
-	int denom = std::min(dy, dx) ;
-	int numer = std::max(dy, dx) ;
+	int slope ;
 
-	return numer / denom ;
+	if(abs(dy) > abs(dx)) {	//vertical
+		slope = dy / dx ;
+	} else {
+		slope = dx / dy ;
+	}
+
+	// std::cout << "Normalized slope of " << line << ": " << slope << std::endl ;
+	return slope ;
 }
 
 

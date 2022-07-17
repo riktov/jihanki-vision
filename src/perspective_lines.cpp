@@ -40,6 +40,7 @@ perspective_line::perspective_line(Vec4i lin)
 {
 	bool is_horizontal = abs(lin[0] - lin[2]) > abs(lin[1] - lin[3]) ;
 
+	// std::cout << "Constructing a pline: " << this->line << ", slope:" << this->slope << std::endl ;
 	if(is_horizontal) {
 		//the y intercept is the point where the line crosses the y-axis. It is the y value, where the point's x value is 0.
 		if(this->slope == 0) {
@@ -227,8 +228,13 @@ void fill_slope_dict(std::map<int, std::vector<perspective_line> > &plines_of, c
 	for(const auto &plin : plines) {
 		auto slope_key = plin.slope ;
 
+		//almost orthogonal is good enough
+		if(abs(slope_key) > 56) {
+			slope_key = 0 ;
+		}
+
 		//round slope on 2 to merge bins
-		const int key_resolution = 4 ;	//should depend on image size
+		const int key_resolution = 8 ;	//should depend on image size
 		slope_key = (slope_key / key_resolution) * key_resolution ;
 
 		auto search = plines_of.find(slope_key) ;
@@ -252,7 +258,7 @@ void fill_intercept_dict(std::map<int, std::vector<perspective_line> > &plines_o
 	for(const auto &plin: plines) {
 		auto intercept_key = plin.zero_intercept ;
 	
-		const int key_resolution = 16 ;
+		const int key_resolution = 32 ;
 		intercept_key = (intercept_key / key_resolution) * key_resolution ;
 		
 		auto search = plines_of.find(intercept_key) ;
