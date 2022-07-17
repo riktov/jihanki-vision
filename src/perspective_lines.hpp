@@ -18,9 +18,12 @@ struct perspective_line {
 	int zero_intercept ;
 	int max_intercept ;
 
+	const static int max_edge = 5000 ;
+
+	//ctor
 	perspective_line(cv::Vec4i) ;
 } ;
 
 void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) ;
-std::vector<perspective_line> merge_lines(std::vector<perspective_line> &plines, bool is_horizontal) ;
+std::vector<perspective_line> merge_lines(std::vector<perspective_line> &plines, bool is_horizontal, bool is_merged_only=false) ;
 void slope_transitions(std::vector<perspective_line> plines) ;

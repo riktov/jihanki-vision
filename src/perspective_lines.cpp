@@ -44,20 +44,25 @@ perspective_line::perspective_line(Vec4i lin)
 		//the y intercept is the point where the line crosses the y-axis. It is the y value, where the point's x value is 0.
 		if(this->slope == 0) {
 			this->zero_intercept = lin[1] ;	//or 3
+			this->max_intercept  = lin[1] ;	//or 3
 		} else {
-			this->zero_intercept = lin[1] + (lin[0] / this->slope) ;
+			this->zero_intercept = lin[1] - (lin[0] / this->slope) ;
+			this->max_intercept  = lin[1] + ((this->max_edge - lin[0]) / this->slope) ;
 		}
 	} else {
 		//the x intercept is the point where the line crosses the x-axis. It is the x value, where the point's y value is 0.
 		if(this->slope == 0) {
 			this->zero_intercept = lin[0] ;
+			this->max_intercept  = lin[0] ;
 		} else {
-			this->zero_intercept = lin[0] + (lin[1] / this->slope) ;
+			this->zero_intercept = lin[0] - (lin[1] / this->slope) ;
+			this->max_intercept  = lin[0] + ((this->max_edge - lin[1]) / this->slope) ;
 		}
 	}
 }
 
-void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) {
+
+void xxxfill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) {
 	if(lines.size() < 1) { return ; }
 	Vec4i any_line = lines.front() ;
 	bool is_horizontal = abs(any_line[0] - any_line[2]) > abs(any_line[1] - any_line[3]) ;
@@ -119,7 +124,7 @@ void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<c
  * @param is_horizontal 
  * @return std::vector<Vec4i> 
  */
-std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_lines, bool is_horizontal) {
+std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_lines, bool is_horizontal, bool is_merged_only) {
 
 	std::vector<perspective_line> plines_with_merges ;
 
@@ -155,12 +160,16 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 					*/
 				} else {
 					//push this single pline of this intercept on to lines
-					plines_with_merges.push_back(plines.front()) ;
+					if(!is_merged_only) {
+						plines_with_merges.push_back(plines.front()) ;
+					}
 				}
 			}
 		} else {
 			//push this single pline of this slope on to lines
-			plines_with_merges.push_back(plines.front()) ;
+			if(!is_merged_only) {
+				plines_with_merges.push_back(plines.front()) ;
+			}
 		}
 	}
 
@@ -173,7 +182,7 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 }
 
 /**
- * @brief Merge a collection of plines 
+ * @brief Merge a collection of collinear plines 
  * 
  * @return perspective_line 
  */

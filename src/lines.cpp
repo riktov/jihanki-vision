@@ -243,7 +243,7 @@ bool xxxis_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
 }
 
 /**
- * @brief Return a line created by merging two collinear lines.
+ * @brief Return a line created by merging two collinear line segments.
  * 
  * @param l1 
  * @param l2 
@@ -262,7 +262,7 @@ Vec4i merge_collinear(Vec4i l1, Vec4i l2) {
 		int min_x = min(min(l1[0], l1[2]), min(l2[0], l2[2])) ;
 		int max_x = max(max(l1[0], l1[2]), max(l2[0], l2[2])) ;
 	
-		return Vec4i(min_x, l1[1], l1[0], max_x) ;
+		return Vec4i(min_x, l1[1], max_x, l1[1]) ;
 	}
 
 	int min_x = min(min(l1[0], l1[2]), min(l2[0], l2[2])) ;

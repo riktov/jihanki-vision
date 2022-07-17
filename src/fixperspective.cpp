@@ -252,8 +252,7 @@ int process_file(char *filename, const char *dest_file) {
 	cvtColor(img_plot, img_plot, COLOR_GRAY2BGR) ;
 
 	//NEW FROM HERE
-	std::vector<Vec4i> left_lines, right_lines, top_lines, bottom_lines ;
-	std::vector<Vec4i> lines ;
+	// std::vector<Vec4i> left_lines, right_lines, top_lines, bottom_lines ;
 	
 	// imshow("gray" , scale_for_display(img_gray)) ;
 	// imshow("val" , scale_for_display(img_val)) ;
@@ -303,7 +302,7 @@ int process_file(char *filename, const char *dest_file) {
 		//place the dense mask over the corner image to erase the dense parts
 		img.copyTo(img_edges_masked, img_dense_combined) ;
 
-		lines = detect_bounding_lines(img_edges_masked, 0) ;	//aready removes diagonals
+		auto lines = detect_bounding_lines(img_edges_masked, 0) ;	//aready removes diagonals
 
 		//Separate into vertical and horizontal
 		std::vector<Vec4i> horizontal_lines, vertical_lines ;
@@ -325,8 +324,10 @@ int process_file(char *filename, const char *dest_file) {
 		std::vector<perspective_line> horizontal_plines, vertical_plines ;
 		
 		std::cout << "Filling plines: " << std::endl ;
-		fill_perspective_lines(horizontal_plines, horizontal_lines) ;
-		fill_perspective_lines(vertical_plines, vertical_lines) ;
+		for(auto lin : horizontal_lines) { horizontal_plines.push_back(perspective_line(lin)) ; }
+		for(auto lin : vertical_lines) { vertical_plines.push_back(perspective_line(lin)) ; }
+		// fill_perspective_lines(horizontal_plines, horizontal_lines) ;
+		// fill_perspective_lines(vertical_plines, vertical_lines) ;
 
 		//accumulate the plines from this pass
 		plines_combined_horizontal.insert(plines_combined_horizontal.end(), horizontal_plines.begin(), horizontal_plines.end()) ;
@@ -347,13 +348,7 @@ int process_file(char *filename, const char *dest_file) {
 		std::string label_edges = "Edges " + std::string(channel_img_names[i]) ;
 		imshow(label_edges , scale_for_display(img_edges_masked)) ;
 		#endif
-		/*
-		auto color = colors[i] ;
-		plot_lines(img_plot, left_detected_lines, color) ;
-		plot_lines(img_plot, right_detected_lines, color) ;
-		plot_lines(img_plot, top_detected_lines, color) ;
-		plot_lines(img_plot, bottom_detected_lines, color) ;
-		*/
+
 		i++ ;
 	}
 
@@ -362,9 +357,22 @@ int process_file(char *filename, const char *dest_file) {
 		exit(-19) ;
 	}
 
+	std::cout << "Horizontal plines in slope-intercept format" << std::endl ;
+	for(auto plin : plines_combined_horizontal) {
+		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
+	}
+	std::cout << std::endl ;
+
+	std::cout << "Vertical plines in slope-intercept format" << std::endl ;
+	for(auto plin : plines_combined_vertical) {
+		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
+	}
+	std::cout << std::endl ;
+
 	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
-	std::cout << "Merging collinears" << std::endl ;
+	std::cout << "Merging horizontal collinears" << std::endl ;
 	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, true) ;
+	std::cout << "Merging vertical collinears" << std::endl ;
 	auto merged_vertical_plines = merge_lines(plines_combined_vertical, false) ;
 
 	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
@@ -405,15 +413,26 @@ int process_file(char *filename, const char *dest_file) {
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
 		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
+		//make any needed clones here before drawing on it.
+		Mat img_merged_lines = img_gray.clone() ;
+
+
 		plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
 		plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
 
-		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
-		plot_lines(img_dense_combined, lines, Scalar(127, 0, 255)) ;
 
-		imshow("Dense blocks combined" , scale_for_display(img_dense_combined)) ;
+		plot_lines(img_merged_lines, merged_horizontal_plines, Scalar(255, 127, 255)) ;
+		plot_lines(img_merged_lines, merged_vertical_plines, Scalar(255, 127, 255)) ;
+		imshow("Merged (only) lines", scale_for_display(img_merged_lines)) ;		
+
+		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
+		plot_lines(img_dense_combined, plines_combined_horizontal, Scalar(127, 0, 255)) ;
+		plot_lines(img_dense_combined, plines_combined_vertical, Scalar(127, 0, 255)) ;
+
+		imshow("Dense blocks with lines before merge" , scale_for_display(img_dense_combined)) ;
+
 		// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
-		plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
+		// plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
 		imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
 		// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
 
@@ -628,17 +647,14 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 		}
 		std::cout << std::endl ;
 	}
-	std::cout << "about to get homography" << std::endl ;
 
 	auto hom = cv::findHomography(roi_corners, dst_corners);
 	
-	std::cout << "Got homography" << std::endl ;
 	auto corrected_image_size =	Size(cvRound(dst_corners[2].x + right_margin), cvRound(dst_corners[2].y + bottom_margin));
 	Mat corrected_image ;//= img.clone() ;
 	
 	// do perspective transformation
 	warpPerspective(img, corrected_image, hom, corrected_image_size, INTER_LINEAR, BORDER_CONSTANT, Scalar(255, 0, 255));
-	std::cout << "returned from warpPerspective" << std::endl ;
 
 	//clip out the blank background areas
 	if (cmdopt_clip) {
