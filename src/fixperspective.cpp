@@ -63,6 +63,7 @@ std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int gap) ;
 std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> lines, int gap) ;
 std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int gap) ;
 std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> lines, int gap) ;
+Rect trim_dense_edges(Mat src) ;
 
 #ifdef USE_EXIV2
 bool copy_exif(std::string src_path, std::string dest_path) ;
@@ -329,12 +330,6 @@ int process_file(char *filename, const char *dest_file) {
 		// fill_perspective_lines(horizontal_plines, horizontal_lines) ;
 		// fill_perspective_lines(vertical_plines, vertical_lines) ;
 
-		std::cout << "Within channel loop: Horizontal plines in slope-intercept format" << std::endl ;
-		for(auto plin : horizontal_plines) {
-			std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
-		}
-		std::cout << std::endl ;
-
 		//accumulate the plines from this pass
 		plines_combined_horizontal.insert(plines_combined_horizontal.end(), horizontal_plines.begin(), horizontal_plines.end()) ;
 		plines_combined_vertical.insert(plines_combined_vertical.end(), vertical_plines.begin(), vertical_plines.end()) ;
@@ -386,8 +381,9 @@ int process_file(char *filename, const char *dest_file) {
 	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
 	std::cout << "Vert plines after merged: " << merged_vertical_plines.size() << std::endl ;
 	
-	std::cout << "Check convergence from transitions" << std::endl ;
+	std::cout << "Check convergence for horizontals" << std::endl ;
 	slope_transitions(merged_horizontal_plines) ;
+	std::cout << "Check convergence for verticals" << std::endl ;
 	slope_transitions(merged_vertical_plines) ;
 	
 
@@ -401,8 +397,8 @@ int process_file(char *filename, const char *dest_file) {
 	//select the two best verticals and horizontals
 	//sort by length, and step through until we find two that are sufficiently separated
 	std::cout << "Getting best four bounding lines." << std::endl ;
-	auto best_verticals   = best_vertical_lines(plines_combined_vertical, src.cols * 2 / 3) ;
-	auto best_horizontals = best_horizontal_lines(plines_combined_horizontal, src.rows * 2 / 3) ;
+	auto best_horizontals = best_horizontal_lines(merged_horizontal_plines, src.rows * 2 / 3) ;
+	auto best_verticals   = best_vertical_lines(merged_vertical_plines, src.cols * 2 / 3) ;
 
 
 
@@ -417,6 +413,13 @@ int process_file(char *filename, const char *dest_file) {
 
 
 	Mat transformed_image = transform_perspective(src, best_horizontals.first, best_horizontals.second, best_verticals.first, best_verticals.second) ;
+
+	auto trim_rect = trim_dense_edges(transformed_image) ;
+	/*
+	Next:
+	Apply the same transform to the busy mask
+	*/
+
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
@@ -526,7 +529,7 @@ std::vector<Vec4i> detect_bounding_lines(Mat img_cann, int strip_offset) {
 	//remove diagonal lines
 
 	auto slant_iter = std::remove_if(lines.begin(), lines.end(),
-		[](Vec4i lin){ return slant(lin) > 0.1 ; }) ;
+		[](Vec4i lin){ return slant(lin) > 0.1 ; }) ;	// about 10 degrees
 	lines.erase(slant_iter, lines.end()) ;
 
 	if(cmdopt_verbose) {
@@ -1002,11 +1005,90 @@ std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> plin
 }
 
 /**
- * @brief Verify that an image has been corrected correctly. Detect the lines again, and check that most are very close to orthogonal.
+ * @brief Return a rectangle that excludes busy areas on the sides
  * 
  * @param img 
- * @return int 
+ * @return Rect 
  */
-int verify_correction(Mat img) {
-	return 0 ;
+Rect trim_dense_edges(Mat src) {  
+	//gray is a little different from the value channel
+	Mat img_hsv, img_gray ;
+	cvtColor(src, img_gray, COLOR_BGR2GRAY) ;
+
+	cvtColor(src, img_hsv, COLOR_BGR2HSV) ;	//we will overwrite with just the hue channel
+
+	std::vector<Mat> hsv_planes, bgr_planes;
+
+	split(img_hsv, hsv_planes );
+	Mat img_hue = hsv_planes[0] ;
+	Mat img_val = hsv_planes[2] ;
+
+	split(src, bgr_planes) ;
+	Mat img_blue = bgr_planes[0] ;
+	Mat img_green = bgr_planes[1] ;
+	Mat img_red = bgr_planes[2] ;
+
+	Mat imgs[] = {
+		img_gray,
+		img_hue,
+		// img_val, 
+		// img_blue,
+		// img_green,
+		// img_red
+	} ;
+
+	Mat img_dense_combined ;
+	Mat img_edges_combined ;
+	std::vector<Mat> channel_images_edges ;
+
+	
+	//Get canny corners for each channel, 
+	//combine them, and create a dense block mask which can be applied to all channels.
+	//Save the canny images for another pass to detect lines on each of them
+	for(auto img: imgs) {
+		Mat img_edges;
+		Canny(img, img_edges, 30, 100, 3) ; //30, 250, 3
+		channel_images_edges.push_back(img_edges) ;
+	}
+
+
+	for(auto img : channel_images_edges) {
+		img.copyTo(img_edges_combined, img) ;	//only for denseblock mask
+	}
+	img_dense_combined = find_dense_areas(img_edges_combined) ;
+	bitwise_not(img_dense_combined, img_dense_combined) ;
+
+	imshow("Dense block on transformed image", scale_for_display(img_dense_combined)) ;	
+
+	Mat img_strip_horiz, img_strip_vert ;
+	reduce(img_dense_combined, img_strip_horiz, 0, REDUCE_AVG) ;
+	reduce(img_dense_combined, img_strip_vert, 1, REDUCE_AVG) ;
+	threshold(img_strip_horiz, img_strip_horiz, 75, 255, THRESH_BINARY) ;
+	threshold(img_strip_vert,  img_strip_vert,  75, 255, THRESH_BINARY) ;
+
+	std::vector<int> levels_horiz = img_strip_horiz.row(0) ;
+	//63
+	std::vector<int> levels_vert = img_strip_vert.col(0) ;
+
+	int left_edge = 0 ;
+	while(levels_horiz[left_edge] == 0) { left_edge++ ; }
+
+	int top_edge = 0 ;
+	while(levels_vert[top_edge] == 0) { top_edge++ ; }
+
+	std::cout << "top edge: " << top_edge << std::endl ;
+	std::cout << "left edge: " << left_edge << std::endl ;
+
+
+    resize(img_strip_horiz, img_strip_horiz, img_dense_combined.size()) ;
+    resize(img_strip_vert, img_strip_vert, img_dense_combined.size()) ;
+
+	Mat mask ;
+	bitwise_not(img_strip_vert, mask) ;
+	img_strip_vert.copyTo(img_strip_horiz, mask) ;
+	imshow("Horiz strip", scale_for_display(img_strip_horiz)) ;		
+
+	return Rect() ;
+	//reduce the 
+	
 }

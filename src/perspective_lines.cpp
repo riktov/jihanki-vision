@@ -27,6 +27,7 @@ using namespace cv ;
 
 //local function declarations
 void fill_slope_dict(std::map<int, std::vector<perspective_line> > &lines_of_slope, const std::vector<perspective_line> plines) ;
+void fill_angle_dict(std::map<int, std::vector<perspective_line> > &lines_of_slope, const std::vector<perspective_line> plines) ;
 void fill_intercept_dict(std::map<int, std::vector<perspective_line> > &lines_of_intercept, const std::vector<perspective_line> plines) ;
 perspective_line merge_pline_collection(const std::vector<perspective_line> plines) ;
 
@@ -73,60 +74,6 @@ Vec4i perspective_line::full_line() {
 	}
 }
 
-void xxxfill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) {
-	if(lines.size() < 1) { return ; }
-	Vec4i any_line = lines.front() ;
-	bool is_horizontal = abs(any_line[0] - any_line[2]) > abs(any_line[1] - any_line[3]) ;
-
-	for(auto lin : lines) {
-		perspective_line pl(lin) ;
-
-		int pseudo_slope ; 	
-		int dx = lin[0] - lin[2] ;
-		int dy = lin[1] - lin[3] ;
-		int d_short, d_long ;
-
-		if(is_horizontal) {
-			d_short = dy ;
-			d_long  = dx ;
-		} else {
-			d_short = dx ;
-			d_long  = dy ;
-		}
-
-		if(d_short == 0) {
-			pseudo_slope = 0 ;
-		} else {
-			pseudo_slope = d_long / d_short ;
-		}
-
-
-		int intercept = -1 ;
-
-		if(is_horizontal) {
-			//the y intercept is the point where the line crosses the y-axis. It is the y value, where the point's x value is 0.
-			if(pseudo_slope == 0) {
-				intercept = lin[1] ;	//or 3
-			} else {
-				intercept = lin[1] + (lin[0] / pseudo_slope) ;
-			}
-		} else {
-			//the x intercept is the point where the line crosses the x-axis. It is the x value, where the point's y value is 0.
-			if(pseudo_slope == 0) {
-				intercept = lin[0] ;
-			} else {
-				intercept = lin[0] + (lin[1] / pseudo_slope) ;
-			}
-		}
-
-		pl.line = lin ;
-		pl.slope = pseudo_slope ;
-		pl.zero_intercept = intercept ;
-
-		plines.push_back(pl) ;
-	
-	}
-}
 
 /**
  * @brief 
@@ -140,15 +87,15 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 	std::vector<perspective_line> plines_with_merges ;
 
 	//from the vector of plines, build a dictionary keyed by slope
-	std::map<int, std::vector<perspective_line> > lines_of_slope ;
-	fill_slope_dict(lines_of_slope, pers_lines) ;
+	std::map<int, std::vector<perspective_line> > lines_of_angle ;
+	fill_angle_dict(lines_of_angle, pers_lines) ;
 	
 	//for each collection of plines with a given slope, build a dictionary of lines keyed by intercept
-	for(const auto &pair : lines_of_slope) {
-		auto slope = pair.first ;
+	for(const auto &pair : lines_of_angle) {
+		auto angle = pair.first ;
 		auto plines = pair.second ;
 		if (plines.size() > 1) {
-			std::cout << slope << " slope (" << plines.size() << " lines): " << std::endl ;
+			std::cout << angle << " degrees (" << plines.size() << " lines): " << std::endl ;
 
 			std::map<int, std::vector<perspective_line> > lines_of_intercept ;
 			fill_intercept_dict(lines_of_intercept, plines) ;
@@ -159,7 +106,7 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 
 				//merge 
 				if (plines.size() > 1) {
-					std::cout << "  " << intercept << " intercept: " ;
+					std::cout << "  " << intercept << " intercept (" << plines.size() << ")" << std::endl ; ;
 					perspective_line merged = merge_pline_collection(plines) ;
 					
 					plines_with_merges.push_back(merged) ;	
@@ -213,13 +160,13 @@ perspective_line merge_pline_collection(const std::vector<perspective_line> plin
 	//std::reduce() only from C++17
 	Vec4i reduced = lines.front() ;
 
-	std::cout << "Reducing: " ;
+	// std::cout << "Reducing: " ;
 	for(auto lin: lines) {
-		std::cout << lin << ", " ;
+		// std::cout << lin << ", " ;
 		reduced = merge_collinear(reduced, lin) ;
 	}
 
-	std::cout << " to " << reduced << std::endl ;
+	// std::cout << " to " << reduced << std::endl ;
 
 
 	//return single pline made from line
@@ -259,6 +206,30 @@ void fill_slope_dict(std::map<int, std::vector<perspective_line> > &plines_of, c
 }
 
 /**
+ * @brief Fill a dictionary (std::map) with plines keyed by integral angle
+ * 
+ * @param plines_of - Dictionary to fill
+ * @param plines - plines
+ */
+void fill_angle_dict(std::map<int, std::vector<perspective_line> > &plines_of, const std::vector<perspective_line> plines) {
+	for(const auto &plin : plines) {
+		int angle_key = int(plin.angle) ;
+
+		//round on 2 to merge bins
+		//const int key_resolution = 8 ;	//should depend on image size
+		//angle_key = (slope_key / key_resolution) * key_resolution ;
+
+		auto search = plines_of.find(angle_key) ;
+		if(search != plines_of.end()) {	//found
+			plines_of[angle_key].push_back(plin) ;
+		} else {
+			std::vector<perspective_line> new_plines ;
+			new_plines.push_back(plin) ;
+			plines_of[angle_key] = new_plines ;
+		}
+	}
+}
+/**
  * @brief Fill a dictionary (std::map) with plines keyed by intercept
  * 
  * @param lines_of_intercept - Dictionary to fill
@@ -295,22 +266,30 @@ void slope_transitions(std::vector<perspective_line> plines) {
 		return pl1.zero_intercept < pl2.zero_intercept ;
 	}) ;
 
-	int s1, s2, s3 ;
-	int i1, i2, i3 ;
+	int iz_before, iz_this, iz_after ;
+	int im_before, im_this, im_after ;
 
-	for(size_t i = 2 ; i < plines.size() ; i++) {
-		s1 = plines.at(i - 2).slope ;
-		s2 = plines.at(i - 1).slope ;
-		s3 = plines.at(i).slope ;
+	for(size_t i = 1 ; i < plines.size() ; i++) {
+		iz_before = plines.at(i - 1).zero_intercept ;
+		iz_this   = plines.at(i).zero_intercept ;
+		// iz_after  = plines.at(i + 1).zero_intercept ;
 
-		i1 = plines.at(i - 2).zero_intercept ;
-		i2 = plines.at(i - 1).zero_intercept ;
-		i3 = plines.at(i).zero_intercept ;
+		im_before = plines.at(i - 1).max_intercept ;
+		im_this   = plines.at(i).max_intercept ;
+		// im_after  = plines.at(i + 1).max_intercept ;
 
-		std::cout << i1 << ":" << s1 << " -> " ;
+		int iz_diff_before = iz_this - iz_before ;
+		// int iz_diff_after  = iz_after - iz_this ;
+
+		int im_diff_before = im_this - im_before ;
+		// int im_diff_after  = im_after - im_this ;
+
+		
+		float ratio_before = (1.0 * iz_diff_before) / im_diff_before ;
+		// float ratio_after  = (1.0 * iz_diff_after) / im_diff_after ;
+
+		std::cout << ratio_before << std::endl ;
 	}
-	std::cout << i2 << ":" << s2 << " -> " ;
-	std::cout << i3 << ":" << s3 << " -> " ;
 
 	std::cout << std::endl ;
 }
