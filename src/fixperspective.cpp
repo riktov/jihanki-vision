@@ -1058,7 +1058,6 @@ Rect trim_dense_edges(Mat src) {
 	img_dense_combined = find_dense_areas(img_edges_combined) ;
 	bitwise_not(img_dense_combined, img_dense_combined) ;
 
-	imshow("Dense block on transformed image", scale_for_display(img_dense_combined)) ;	
 
 	Mat img_strip_horiz, img_strip_vert ;
 	reduce(img_dense_combined, img_strip_horiz, 0, REDUCE_AVG) ;
@@ -1086,8 +1085,12 @@ Rect trim_dense_edges(Mat src) {
 	Mat mask ;
 	bitwise_not(img_strip_vert, mask) ;
 	img_strip_vert.copyTo(img_strip_horiz, mask) ;
-	imshow("Horiz strip", scale_for_display(img_strip_horiz)) ;		
 
+	#ifdef USE_GUI
+	imshow("Dense block on transformed image", scale_for_display(img_dense_combined)) ;	
+	imshow("Horiz strip", scale_for_display(img_strip_horiz)) ;		
+	#endif
+	
 	return Rect() ;
 	//reduce the 
 	
