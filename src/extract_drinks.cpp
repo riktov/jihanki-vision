@@ -63,7 +63,7 @@ void write_slot_image_files(Mat img, std::vector<std::vector<Rect> > slot_row_re
 //std::vector<Vec4i> button_strip_lines(Mat src_gray) ;
 int detect_button_strip_contours_stepped(Mat src, std::vector<std::vector<Point> >& contours,int initial_threshold) ;
 void find_button_strip_contours(Mat src_gray, std::vector<std::vector<Point> >& contours, int thresh_val) ;
-
+std::vector<int> adjusted_slot_counts(std::vector<std::shared_ptr<ButtonStrip> > strips) ;
 
 //constants
 const auto LABEL_ASPECT = 2.8 ;
@@ -368,7 +368,9 @@ int process_file(std::string infilepath, const std::string dest_dir) {
     //create ButtonStrip objects from the possibly merged contours
     //we pass the strip detection threshold, which was used to detect the strips, to then extend the button image
     auto strips = merged_button_strips(button_strip_contours, strip_detection_thresh) ;
-    std::cout << "Detected " << strips.size() << " strips." << std::endl ;
+    if(cmdopt_verbose) {
+        std::cout << "Created " << strips.size() << " ButtonStrip objects." << std::endl ;
+    }
     //////////////////
 
 
@@ -421,8 +423,13 @@ int process_file(std::string infilepath, const std::string dest_dir) {
         //crop_to_lower_edge(strip->image(), img_filled) ; //PNR2022
         img_filled = strip->image().clone() ;
 
-        std::cout << "Filled image:" << img_filled.size() << std::endl ;
+        if(cmdopt_verbose) {
+            // std::cout << "Filled image:" << img_filled.size() << std::endl ;
+        }
         
+        /*
+        //not very useful
+
         #ifdef USE_GUI
         if (!cmdopt_batch) {
             std::stringstream ss ;
@@ -430,7 +437,8 @@ int process_file(std::string infilepath, const std::string dest_dir) {
             imshow(ss.str(), img_filled) ;
         }
         #endif
-        
+        */
+
         idx++ ;
 
         //continue ;
@@ -441,7 +449,7 @@ int process_file(std::string infilepath, const std::string dest_dir) {
     }
 
     #ifdef USE_GUI
-    waitKey() ;
+    //waitKey() ;   //for the strips above
     //return 0 ;
     #endif
     
@@ -457,10 +465,23 @@ int process_file(std::string infilepath, const std::string dest_dir) {
     
     if(cmdopt_verbose) {
         std::cout << "All detected strips after extending images: " << std::endl ;
-        for(const auto &bs : strips) {
-            std::cout << bs->rc() << ", slot height:  " << bs->slots_height() << std::endl ;
+        for(const auto &strip : strips) {
+            std::cout << strip->rc() ;
+
+            // std::cout << ", slot height:" << strip->slots_height() ;
+            
+            float periodicity = run_length_second_diff(strip->runs()) ;
+            std::cout << ", P:" << periodicity ;
+            if(periodicity < 200) {
+                std::cout << ", slots:" << strip->slot_separators().size() - 1 ;
+            }
+            std::cout << std::endl ;
         }
     }
+
+    /* At this point we should see if there are any low-P (high periodicity) strips.
+    If so, we can discard any high-P (>200) strips
+    */
 
    /*
      Iterate over the button strips to obtain an accurate detection of the configuration,
@@ -500,9 +521,9 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 
     Mat img_merged_thresh = merge_thresh_images(thresh_images) ;
     resize(img_merged_thresh, img_merged_thresh, Size(1000, img_merged_thresh.rows * 8)) ;
-
     // imshow("Merged thresh", img_merged_thresh) ;
-    const auto RLSD_THRESHOLD = 9.0 ;//5.0
+
+    const auto RLSD_THRESHOLD = 10.0 ;//5.0
     std::vector<std::shared_ptr<ButtonStrip> > strips_with_good_rlsd ;
     std::copy_if(strips.begin(), strips.end(), std::back_inserter(strips_with_good_rlsd),
 	    [RLSD_THRESHOLD](const std::shared_ptr<ButtonStrip> strip) {
@@ -519,39 +540,29 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 	return -2 ;	
     }
 
-
-    if(cmdopt_verbose) {
-		std::cout << "Strips with good RLSD:" << std::endl ;
-    }
-
-    /* This is salvaged code. This is for strips that are the full width but the slot separators fade away on the ends.
-       We calculate the number of slots based on the strip width.
-       Not sure what we want to do with the results.
-     */
-
-    for(const auto &strip : strips_with_good_rlsd) {
-        auto sep_lines = strip->slot_separators() ;
-        auto num_slots = sep_lines.size() - 1 ;
-        
-        auto slots_span = sep_lines[sep_lines.size() - 1] - sep_lines[0];
-        int corrected_num_slots = round(strip->rc().width * num_slots * 1.0 / slots_span) ;
+    //not sure how to use this
+    if(false) {
+        auto adjusted_slots = adjusted_slot_counts(strips_with_good_rlsd) ;
 
         if(cmdopt_verbose) {
-            std::cout << "Detected  num slots: " << num_slots << std::endl ;
-            std::cout << "Corrected num slots: " << corrected_num_slots << std::endl ;
+            for(int i = 0 ; i < strips_with_good_rlsd.size() ; i++) {
+                std::cout << strips_with_good_rlsd[i]->rc() << " " ;
+                std::cout << strips_with_good_rlsd[i]->slot_separators().size() ;
+                std::cout << ", " << adjusted_slots[i] << std::endl ;
+            }
         }
-        
-        // int mean_slot_width = slots_span / num_slots ;
     }
 
-    
+
+
+
     Rect widest_strip_rect = Rect(0, 0, 0, 0) ;
     for(const auto &strip : strips_with_good_rlsd) {
 		if(strip->rc().width > widest_strip_rect.width) {
 			widest_strip_rect = strip->rc() ;
 		}
 		if(cmdopt_verbose) {
-			std::cout << strip->rc() << ", Periodicity:" << run_length_second_diff(strip->runs()) << std::endl ;
+		//	std::cout << strip->rc() << ", Periodicity:" << run_length_second_diff(strip->runs()) << std::endl ;
 		}
     }
 
@@ -559,10 +570,13 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 
     /* now we check the dimensions of all the strips against the widest one
        to select all accurate ones regardless of RLSD
+
+       If there are two or more strips with all variances < 0.1, then we should discard all strip with 
+       two or more variances > 0.2
      */
     
     if(cmdopt_verbose) {
-		std::cout << "--- The widest strip rect " << widest_strip_rect << std::endl ;
+	//	std::cout << "--- The widest strip rect " << widest_strip_rect << std::endl ;
 		std::cout << "Filtering strips for good width or alignment with the widest one." << std::endl ;
     }
 
@@ -577,33 +591,57 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 		const auto left_position_variance  = abs(strip->rc().x - widest_strip_rect.x) * 1.0 / src.cols ;
 		const auto right_position_variance = abs(strip->rc().br().x - widest_strip_rect.br().x) * 1.0 / src.cols ;
 
+
+        char closeness_indicator = ' ' ;
+        
+        //TODO : change this so it is good only if it passes as least two criteria, instead of one.
+
+        int closeness_counts = 0 ;
+
+        if(width_variance < width_var_threshold) {
+            closeness_counts++ ;
+        }
+		if (left_position_variance < pos_threshold) {
+            closeness_counts++ ;
+        }
+        if(right_position_variance < pos_threshold) {
+			closeness_counts++ ;
+		}
+
+        if(closeness_counts > 1){
+            strips_with_good_width.push_back(strip) ;
+            closeness_indicator = '+' ;
+        }
+
+
+        if(strip->rc() == widest_strip_rect) {
+            closeness_indicator = '0' ; //the widest strip, which we are comparing against
+        } else {		
+            if((left_position_variance < pos_threshold_extreme) && (right_position_variance < pos_threshold_extreme)) {
+                closeness_indicator = '!' ;
+                extremely_aligned++ ;
+            }
+        }
+
 		if(cmdopt_verbose) {
-			std::cout << strip->rc() << "; width variance: " << width_variance ;
-			std::cout << ", left position variance: " << left_position_variance ;
-			std::cout << ", right position variance: " << right_position_variance << std::endl ;
-		}
-		
-		if(width_variance < width_var_threshold ||
-		(left_position_variance < pos_threshold || right_position_variance < pos_threshold)) {
-			strips_with_good_width.push_back(strip) ;
-		}
-		//also check for extreme closeness which indicates very good detection
-		//We can then apply that to all strips
-		if(strip->rc().tl() != widest_strip_rect.tl()) {
-			if((left_position_variance < pos_threshold_extreme) && (right_position_variance < pos_threshold_extreme)) {
-				extremely_aligned++ ;
-				if(cmdopt_verbose) {
-					std::cout << "Found a very accurately aligned strip." << std::endl ;
-				}
-			}
+            std::cout << closeness_indicator ;
+            std::cout << strip->rc() ;
+            std::cout << "; W: " << width_variance ;
+            std::cout << ", L: " << left_position_variance ;
+            std::cout << ", R: " << right_position_variance << std::endl ;
 		}
     }
 
+/*
     if(cmdopt_verbose) {
         std::cout << "Strips with good width or position:" << std::endl ;
         for(auto strip: strips_with_good_width) {
             std::cout << strip->rc() << " : " << strip->rc().x << " <--> " << strip->rc().br().x << std::endl ;
         }
+    }
+*/
+
+    if(cmdopt_verbose) {
         std::cout << "Totaling widths and counts to calculate a mean..."  ;
     }
     
@@ -880,7 +918,7 @@ int detect_button_strip_contours_stepped(Mat src, std::vector<std::vector<Point>
             find_button_strip_contours(src, contours, strip_detection_thresh) ;
 
             if(cmdopt_verbose) {
-                std::cout << "Detected button strips using stepped threshold with bias " << strip_detection_thresh << std::endl ;
+                std::cout << "Detected " << contours.size() << "button strips using stepped threshold with bias " << strip_detection_thresh << std::endl ;
             }
             break ;
         }
@@ -933,3 +971,30 @@ void find_button_strip_contours(Mat src_gray, std::vector<std::vector<Point> >& 
 	    }) ;
 }
 
+/* This is for strips that are the full width but the slot separators fade away on the ends.
+    We calculate the number of slots based on the strip width.
+    It will add one more slot in that case.
+    Not sure what we want to do with the results.
+    */
+std::vector<int> adjusted_slot_counts(std::vector<std::shared_ptr<ButtonStrip> > strips) {
+    if(cmdopt_verbose) {
+        std::cout << "Refine slot count based on high-Periodicity strips (detected, adjusted for strip width): " << std::endl  ;
+    }
+
+    std::vector<int> adjusted ;
+
+    for(const auto &strip : strips) {
+        auto sep_lines = strip->slot_separators() ;
+        auto num_slots = sep_lines.size() - 1 ;
+        
+        auto slots_span = sep_lines[sep_lines.size() - 1] - sep_lines[0];
+        int adjusted_num_slots = round(strip->rc().width * num_slots * 1.0 / slots_span) ;
+
+        adjusted.push_back(adjusted_num_slots) ;
+        
+        // int mean_slot_width = slots_span / num_slots ;
+    }
+
+    return adjusted ;
+
+}
