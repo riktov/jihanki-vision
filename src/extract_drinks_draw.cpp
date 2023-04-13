@@ -173,7 +173,7 @@ void draw_transitions(Mat img, const std::shared_ptr<ButtonStrip> strip) {
     
     if(rc_dest.area() != 0) {
         cvtColor(gradation_strip, gradation_strip, COLOR_GRAY2BGR) ;
-        gradation_strip.copyTo(img(rc_dest)) ;
+        // gradation_strip.copyTo(img(rc_dest)) ;
     }
 
     //We are doing the same thresholding in run_lengths()

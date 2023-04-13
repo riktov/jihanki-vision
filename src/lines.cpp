@@ -129,7 +129,7 @@ cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) {
 
   //  std::cout << __FILE__ << ":" << __LINE__ << std::endl ;
   if(l1x1 == l1x2) {//l1 is vertical
-    std::cout << "line_intersection(): l1 is vertical." << std::endl ;
+    // std::cout << "line_intersection(): l1 is vertical." << std::endl ;
     float x = float(l1x1) ;
 
     float m2 = (l2y2 - l2y1) / (l2x2 - l2x1) ;
@@ -144,7 +144,7 @@ cv::Point2f line_intersection(cv::Vec4i l1, cv::Vec4i l2) {
 
   //std::cout << __FILE__ << ":" << __LINE__ << std::endl ;
   if(l2x1 == l2x2) {//l2 is vertical
-    std::cout << "l2 is vertical." << std::endl ;
+    // std::cout << "l2 is vertical." << std::endl ;
     float x = float(l2x1) ;
 
     float m1 = (l1y2 - l1y1) / (l1x2 - l1x1) ;
