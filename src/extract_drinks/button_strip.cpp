@@ -499,13 +499,13 @@ std::vector<std::shared_ptr<ButtonStrip> > merged_button_strips(std::vector<std:
 		return strips ;
 	}
 	
-	std::vector<std::vector<Point> > strip_contours ;
+	std::vector<std::vector<Point> > accumulated_contours ;	
 	
 	for(std::size_t i = 0 ; i < contours.size() ; i++) {
 		auto this_contour = contours[i] ;
 		
-		if(strip_contours.empty()) {
-			strip_contours.insert(strip_contours.begin(), this_contour) ;
+		if(accumulated_contours.empty()) {
+			accumulated_contours.insert(accumulated_contours.begin(), this_contour) ;
 			continue ;
 		}
 
@@ -516,33 +516,37 @@ std::vector<std::shared_ptr<ButtonStrip> > merged_button_strips(std::vector<std:
 		/* create a new rect by applying a margin around the previous contour rect.
 		We will then check if this contour overlaps it.
 		*/
-		int margin = rc_prev.width / 10 ;//10 this seems to have no effect
-		auto tld = rc_prev.tl() + Point(-1 * margin, -1 * margin) ;
-		auto brd = rc_prev.br() + Point(margin, margin) ;	
+	// /home/paul/Pictures/dcim/jihanki/IMG_0096.JPG
+		int margin = rc_prev.width / 1 ;//why does this have to be so large??
+
+		std::cout << "contour overlap margin:" << margin << std::endl ;
+
+		auto tld = rc_prev.tl() + Point(-1 * margin, 0) ;
+		auto brd = rc_prev.br() + Point(margin, 0) ;	
+		// auto tld = rc_prev.tl() + Point(-1 * margin, -1 * margin) ;
+		// auto brd = rc_prev.br() + Point(margin, margin) ;	
 		auto rcd = Rect(tld, brd) ;
 
-		//std::cout << "Original rect:" << rc_prev << std::endl ;
-		//std::cout << "Margined rect:" << rcd << std::endl ; 
 		if((rc_this & rcd).area() == 0) {
-			//this contour is part of a new strip, so build a new ButtonStrip from what's saved in the contours vector
-			auto strip = strip_from_contours(strip_contours);
+			//this contour is part of a new strip, so build a new ButtonStrip from what's accumulated in the contours vector
+			auto strip = strip_from_contours(accumulated_contours);
 			if(is_valid_strip(strip)) {
-				if(cmdopt_verbose) {
-					//std::cout << "Created a strip from contours up to " << i << std::endl ;
-				}
 				strips.push_back(strip) ;
+				if(cmdopt_verbose) {
+					std::cout << "Created a strip from contours up to " << i << std::endl ;
+				}
 			}
-			strip_contours.clear() ;
+			accumulated_contours.clear() ;
 		}
-		strip_contours.insert(strip_contours.begin(), this_contour) ;
+		accumulated_contours.insert(accumulated_contours.begin(), this_contour) ;
 	}
 
-	auto last_strip = strip_from_contours(strip_contours);
+	auto last_strip = strip_from_contours(accumulated_contours);
 	if(is_valid_strip(last_strip)) {
-		if(cmdopt_verbose) {
-			//std::cout << "Created a strip from last contour." << std::endl ;
-		}
 		strips.push_back(last_strip) ;
+		if(cmdopt_verbose) {
+			std::cout << "Created a strip from last contour." << std::endl ;
+		}
 	}
 	
 	//calculate the slot height from row above

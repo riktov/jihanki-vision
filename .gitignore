@@ -1,9 +1,6 @@
 *~
 *.o
 *.exe
-extract_drinks
-identify_drink
-fixperspective
 trim_drink
 test
 .vscode
@@ -16,3 +13,4 @@ tags
 *.JPG
 *.jpeg
 build*/*
+notes.txt

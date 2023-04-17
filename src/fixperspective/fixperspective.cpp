@@ -51,13 +51,10 @@ Mat transform_perspective(Mat img, Vec4i top, Vec4i bottom, Vec4i left, Vec4i ri
 inline Mat transform_perspective(Mat img, const std::vector<Vec4i>lines_tblr) {
   return transform_perspective(img, lines_tblr[0], lines_tblr[1], lines_tblr[2], lines_tblr[3]) ;
 }
-//Mat crop_orthogonal(Mat src) ;
 std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
 std::vector<Vec4i> detect_bounding_lines(Mat src, int hough_threshold = 50) ;
 std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
-Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) ;
-std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) ;
-std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) ;
+Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> src_quad_pts, std::vector<Point2f> dst_rect_pts) ;
 Mat find_dense_areas(Mat img_edges) ;
 std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int gap) ;
 std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> lines, int gap) ;
@@ -68,13 +65,6 @@ Rect trim_dense_edges(Mat src) ;
 #ifdef USE_EXIV2
 bool copy_exif(std::string src_path, std::string dest_path) ;
 #endif
-
-//std::vector<Vec4i> button_strip_lines(Mat src_gray) ;
-//std::vector<int> histogram(std::vector<int> vals) ;
-//void draw_drink_separator_lines(Mat img, std::vector<int> runlengths, Point offset) ;
-//std::vector<int> get_drink_columns(Mat img) ;
-
-
 
 
 // global filenames
@@ -401,25 +391,14 @@ int process_file(char *filename, const char *dest_file) {
 	auto best_verticals   = best_vertical_lines(merged_vertical_plines, src.cols * 2 / 3) ;
 
 
-
-	// return 0;
-
-
-
-	// waitKey() ;
-
-	/////////////////////////////////// TEST RETURN //////////////////////////////////////
-	// return 0 ;
-
-
+	//transform
 	Mat transformed_image = transform_perspective(src, best_horizontals.first, best_horizontals.second, best_verticals.first, best_verticals.second) ;
 
-	auto trim_rect = trim_dense_edges(transformed_image) ;
 	/*
-	Next:
-	Apply the same transform to the busy mask
+	std::cout << "Trimming away dense background." << std::endl ;
+	Rect rc_dense_trim = trim_dense_edges(transformed_image) ;
+	transformed_image = transformed_image(rc_dense_trim) ;
 	*/
-
 
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
@@ -560,6 +539,15 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 
 	Exiv2::ExifData &exifData = src_image->exifData();
 
+	
+	Exiv2::Exifdatum orient = exifData["Exif.Image.Orientation"] ;
+
+	std::cout << "orient:" << orient << std::endl ;
+
+	exifData["Exif.Image.Orientation"] = 0;
+
+	std::cout << "fixed:" << orient << std::endl ;
+
 	/*
 	for (auto i = exifData.begin(); i != exifData.end(); ++i) {
 		const char* tn = i->typeName();
@@ -586,13 +574,6 @@ bool copy_exif(std::string src_path, std::string dest_path) {
 
 /**/
 Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left_line, Vec4i right_line) {
-	//  std::cout << "Tranforming perspective" << std::endl ;
-
-	// std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
-	auto roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
-	std::vector<Point2f> dst_corners;
-	// std::vector<Point2f> roi_corners_v(roi_corners.begin(), roi_corners.end()) ;
-	
 	/*
 	  There are many instances when the lines are legitimately horizontal or vertical,
 	  and even sufficiently close to the edges of the frame, but they are within the bounds of
@@ -608,41 +589,52 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	  the destination.
 	  The portion of the source image outside the source quad will appear within the margin.
 	  
-	  For each edge,we chose the _shorter_ of the two margins so that we don't get off-image black regions with
-	  sharp edges which could confuse the next cropper.
-	  Or we could fill those in with a key color like magenta
 	*/
+	//  std::cout << "Tranforming perspective" << std::endl ;
+
+	// std::array<Point2f, 4> roi_corners = line_corners(top_line, bottom_line, left_line, right_line) ;
+	std::cout << "top line:" << top_line << std::endl ;
+	std::cout << "bottom_line:" << bottom_line << std::endl ;
+	std::cout << "left_line:" << left_line << std::endl ;
+	std::cout << "right_line:" << right_line << std::endl ;
 	
-	auto pt_tl = line_intersection(top_line, left_line) ;
-	auto pt_br = line_intersection(bottom_line, right_line) ;
+	std::vector<Point2f> src_quad_points = line_corners(top_line, bottom_line, left_line, right_line) ;
+	std::vector<Point2f> dst_rect_points;
+	// cv:Rect2f dst_rect ; 
+	// std::vector<Point2f> roi_corners_v(roi_corners.begin(), roi_corners.end()) ;
+	
+	
+	auto pt_tl = src_quad_points.at(0) ; //line_intersection(top_line, left_line) ;
+	auto pt_br = src_quad_points.at(2) ; //line_intersection(bottom_line, right_line) ;
 	//auto pt_tr = line_intersection(top_line, right_line) ;
 	//auto pt_bl = line_intersection(bottom_line, left_line) ;
 	
 	// float top_left_margin = line_length(top_line_left_intercept, pt_tl) ;
 	// float left_margin, top_margin, right_margin, bottom_margin ;
 	
-	/*
-	  The left margin in the
+
+	/*	
+	For each edge,we chose the _shorter_ of the two margins so that we don't get off-image black regions with
+	sharp edges which could confuse the next cropper.
+	Or we could fill those in with a key color like magenta
+	
+	The norm value of a complex number is its squared magnitude,
+	defined as the addition of the square of both its real and its imaginary part (without the imaginary unit).
+	This is the square of abs(x).
 	*/
-	//The norm value of a complex number is its squared magnitude,
-	//defined as the addition of the square of both its real and its imaginary part (without the imaginary unit).
-	//This is the square of abs(x).
-	
-	
-	//the longer of lengths of the the top and bottom lines
-	float nm = (float)norm(roi_corners[0] - roi_corners[1]) ;
-	
-	if(cmdopt_verbose) {
-		std::cout << "diff of roi_corners[0] and [1]: " << (roi_corners[0] - roi_corners[1]) << std::endl ;
-		std::cout << "norm(diff roi_corners[0] and [1]): " << nm << std::endl ;
-	}
-	
-	float dst_width  = (float)std::max(norm(roi_corners[0] - roi_corners[1]), norm(roi_corners[2] - roi_corners[3]));
-	//the longer of lengths of the the left and right lines
-	float dst_height = (float)std::max(norm(roi_corners[1] - roi_corners[2]), norm(roi_corners[3] - roi_corners[0]));
+
+	//the longer of lengths of the the pairs of top/bottom and left/right lines
+	float len_src_quad_top    = norm(src_quad_points[0] - src_quad_points[1]) ;
+	float len_src_quad_bottom = norm(src_quad_points[2] - src_quad_points[3]) ;
+	float len_src_quad_left   = norm(src_quad_points[3] - src_quad_points[0]) ;
+	float len_src_quad_right  = norm(src_quad_points[1] - src_quad_points[2]) ;
+
+	float dst_width  = std::max<float>(len_src_quad_top, len_src_quad_bottom);
+	float dst_height = std::max<float>(len_src_quad_left, len_src_quad_right);
 	
 	// float aspect_ratio = dst_height / dst_width ;
 	
+	//it would be more accurate to take the length along the line instead of the axes. But probably not much difference.
 	auto left_margin = pt_tl.x ;
 	auto top_margin = pt_tl.y ;
 	auto right_margin = img.cols - pt_br.x ;
@@ -654,43 +646,79 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
 	  dst_width / dst_height
 	*/
 	
-	if(cmdopt_verbose) { 
-		std::cout << "left margin: " << left_margin << std::endl ;
-		std::cout << "top margin: " << top_margin << std::endl ; 
-		std::cout << "right margin: " << right_margin << std::endl ; 
-		std::cout << "bottom margin: " << bottom_margin << std::endl ; 
+
+	//these points define a rectangle in the destination that we want to map the quadrilateral of roi_corners to.
+	//it is initially pinned to the source quad at the intersection of the two longest edges.
+	Rect2f dst_rect = Rect2f(left_margin, top_margin, dst_width, dst_height) ;
+	std::cout << "dst_rect:" << dst_rect << std::endl ;
+
+	std::cout << "Pinned to " ;
+	if(len_src_quad_top < len_src_quad_bottom) {
+		dst_rect = dst_rect + Point2f(len_src_quad_bottom - len_src_quad_top, 0) ;
+		std::cout << "bottom " ;
+	} else {
+		std::cout << "top " ;
 	}
-	
-	//these points define a rectangle in the destination that we want to map roi_corners to.
-	//
-	dst_corners.push_back(Point2f(left_margin, top_margin)) ;	//TL
-	dst_corners.push_back(Point2f(dst_width + left_margin, top_margin)) ; //TR
-	dst_corners.push_back(Point2f(dst_width + left_margin, dst_height + top_margin)) ; //BR
-	dst_corners.push_back(Point2f(left_margin, dst_height + top_margin)) ;//BL
+
+	if(len_src_quad_left < len_src_quad_right) {
+		dst_rect = dst_rect + Point2f(0, len_src_quad_right - len_src_quad_left) ;
+		std::cout << "right" ;
+	} else {
+		std::cout << "left" ;
+	}
+	std::cout << std::endl ;
+/*
+	dst_rect_points[0] = Point2f(left_margin, top_margin) ;	//TL
+	dst_rect_points[1] = Point2f(left_margin + dst_width, top_margin) ; //TR
+	dst_rect_points[2] = Point2f(left_margin + dst_width, top_margin + dst_height) ; //BR
+	dst_rect_points[3] = Point2f(left_margin, top_margin + dst_height) ;//BL
+*/	
+	dst_rect_points.push_back(dst_rect.tl()) ;	//TL
+	dst_rect_points.push_back(Point2f(dst_rect.x + dst_rect.width, dst_rect.y)) ; //TR
+	dst_rect_points.push_back(dst_rect.br()) ; //BR
+	dst_rect_points.push_back(Point2f(dst_rect.x, dst_rect.y + dst_rect.height)) ;//BL
+
+
+	// dst_rect = Rect2f(left_margin, top_margin, dst_width, dst_height) ;
+
 	
 	if(cmdopt_verbose) { 
-		std::cout << "dst_corners: " ; 
-		for(auto corner: dst_corners) {
-			std::cout << corner << " " ;
+		std::cout << "Source quad margins:" << std::endl ;
+		std::cout << "left: " << left_margin << std::endl ;
+		std::cout << "top: " << top_margin << std::endl ; 
+		std::cout << "right: " << right_margin << std::endl ; 
+		std::cout << "bottom: " << bottom_margin << std::endl ; 
+
+
+		std::cout << "src_quad_points: " << std::endl ;
+		for(auto pt : src_quad_points) {
+			std::cout << pt << std::endl ;
+		}
+		std::cout << std::endl ;
+
+		std::cout << "dst_rect_points: " << std::endl ;
+		for(auto pt : dst_rect_points) {
+			std::cout << pt << std::endl ;
 		}
 		std::cout << std::endl ;
 	}
 
-	auto hom = cv::findHomography(roi_corners, dst_corners);
+	auto hom = cv::findHomography(src_quad_points, dst_rect_points);
 	
-	auto corrected_image_size =	Size(cvRound(dst_corners[2].x + right_margin), cvRound(dst_corners[2].y + bottom_margin));
-	Mat corrected_image ;//= img.clone() ;
+	auto corrected_image_size =	Size(cvRound(dst_width + left_margin + right_margin), cvRound(dst_height + top_margin + bottom_margin));
+
+	Mat warped_image ;//= img.clone() ;
 	
 	// do perspective transformation
-	warpPerspective(img, corrected_image, hom, corrected_image_size, INTER_LINEAR, BORDER_CONSTANT, Scalar(255, 0, 255));
+	warpPerspective(img, warped_image, hom, corrected_image_size, INTER_LINEAR, BORDER_CONSTANT, Scalar(255, 0, 255));
 
 	//clip out the blank background areas
 	if (cmdopt_clip) {
-		Rect clip_frame = rect_within_image(img, corrected_image, roi_corners, dst_corners) ;
-		return corrected_image(clip_frame) ;
+		Rect clip_frame = rect_within_image(img, warped_image, src_quad_points, dst_rect_points) ;
+		return warped_image(clip_frame) ;
 	}
 	
-	return corrected_image ;
+	return warped_image ;
 }
 
 /**
@@ -703,9 +731,10 @@ Mat transform_perspective(Mat img, Vec4i top_line, Vec4i bottom_line, Vec4i left
  * @param dst_corners 
  * @return Rect 
  */
-Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> detected_corners, std::vector<Point2f> dst_corners) {
-	std::vector<Point2f> corners_v(detected_corners.begin(), detected_corners.end()) ;
-	Mat trans = getPerspectiveTransform(corners_v, dst_corners) ;
+Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> src_quad_pts, std::vector<Point2f> dst_rect_pts) {
+	// std::vector<Point2f> corners_v(src_quad.begin(), src_quad.end()) ;
+
+	Mat trans = getPerspectiveTransform(src_quad_pts, dst_rect_pts) ;
 
 	std::vector<Point2f> img_frame(4), transformed ;
 
@@ -766,6 +795,7 @@ std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i rig
 	return points ;
 }
 
+/**
 std::pair<Vec4i, Vec4i> leftmost_rightmost_lines(std::vector<Vec4i> lines) {
 	//get the min and max (leftmost, rightmost) line by midpoint
 	auto lines_iter = std::minmax_element(lines.begin(), lines.end(), 
@@ -787,6 +817,7 @@ std::pair<Vec4i, Vec4i> topmost_bottommost_lines(std::vector<Vec4i> lines) {
 
 	return std::make_pair(topmost, bottommost) ;
 }
+
 
 std::pair<Vec4i, Vec4i> leftmost_rightmost_lines_iter(std::vector<Vec4i> lines, int img_cols) {
 	Vec4i leftmost_line, rightmost_line ;
@@ -841,6 +872,7 @@ std::pair<Vec4i, Vec4i> topmost_bottommost_lines_iter(std::vector<Vec4i> lines, 
 
 	return std::make_pair(topmost_line, bottommost_line) ;
 }
+*/
 
 /**
  * @brief Create an image showing dense areas which have lots of edge dots, and merge them into big blotches
@@ -1070,14 +1102,25 @@ Rect trim_dense_edges(Mat src) {
 	std::vector<int> levels_vert = img_strip_vert.col(0) ;
 
 	int left_edge = 0 ;
-	while(levels_horiz[left_edge] == 0) { left_edge++ ; }
+	while(levels_horiz[left_edge] == 0 && left_edge < src.cols) { left_edge++ ; }
 
 	int top_edge = 0 ;
-	while(levels_vert[top_edge] == 0) { top_edge++ ; }
+	while(levels_vert[top_edge] == 0 && top_edge < src.rows) { top_edge++ ; }
 
-	std::cout << "top edge: " << top_edge << std::endl ;
+	int right_edge = src.cols - 1 ;
+	while(levels_horiz[right_edge] == 0 && right_edge > 0 ) { right_edge-- ; }
+
+	int bottom_edge = src.rows - 1 ;
+	while(levels_vert[bottom_edge] == 0  && bottom_edge > 0) { bottom_edge-- ; }
+
+	Rect rc_trim = Rect(left_edge, top_edge, right_edge - left_edge, bottom_edge - top_edge) ;
+
 	std::cout << "left edge: " << left_edge << std::endl ;
+	std::cout << "top edge: " << top_edge << std::endl ;
+	std::cout << "right edge: " << right_edge << std::endl ;
+	std::cout << "bottom edge: " << bottom_edge << std::endl ;
 
+	std::cout << "Rect: " << rc_trim << std::endl ;
 
     resize(img_strip_horiz, img_strip_horiz, img_dense_combined.size()) ;
     resize(img_strip_vert, img_strip_vert, img_dense_combined.size()) ;
@@ -1090,8 +1133,8 @@ Rect trim_dense_edges(Mat src) {
 	imshow("Dense block on transformed image", scale_for_display(img_dense_combined)) ;	
 	imshow("Horiz strip", scale_for_display(img_strip_horiz)) ;		
 	#endif
-	
-	return Rect() ;
+
+	return rc_trim ;
 	//reduce the 
 	
 }

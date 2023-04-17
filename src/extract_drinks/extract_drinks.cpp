@@ -64,6 +64,8 @@ void write_slot_image_files(Mat img, std::vector<std::vector<Rect> > slot_row_re
 int detect_button_strip_contours_stepped(Mat src, std::vector<std::vector<Point> >& contours,int initial_threshold) ;
 void find_button_strip_contours(Mat src_gray, std::vector<std::vector<Point> >& contours, int thresh_val) ;
 std::vector<int> adjusted_slot_counts(std::vector<std::shared_ptr<ButtonStrip> > strips) ;
+std::vector<std::shared_ptr<ButtonStrip> > collect_aligned_strips(std::vector<std::shared_ptr<ButtonStrip> > strips, Mat src, Rect widest_strip_rc) ;
+
 
 //constants
 const auto LABEL_ASPECT = 2.8 ;
@@ -369,7 +371,7 @@ int process_file(std::string infilepath, const std::string dest_dir) {
     //we pass the strip detection threshold, which was used to detect the strips, to then extend the button image
     auto strips = merged_button_strips(button_strip_contours, strip_detection_thresh) ;
     if(cmdopt_verbose) {
-        std::cout << "Created " << strips.size() << " ButtonStrip objects." << std::endl ;
+        std::cout << "Created " << strips.size() << " ButtonStrip objects from " << button_strip_contours.size() << " contours." << std::endl ;
     }
     //////////////////
 
@@ -540,7 +542,8 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 	return -2 ;	
     }
 
-    //not sure how to use this
+    //not sure what to do with this.
+    //probably don't need it because the function to calculate slots count based on averaging is good enough
     if(false) {
         auto adjusted_slots = adjusted_slot_counts(strips_with_good_rlsd) ;
 
@@ -551,19 +554,6 @@ int process_file(std::string infilepath, const std::string dest_dir) {
                 std::cout << ", " << adjusted_slots[i] << std::endl ;
             }
         }
-    }
-
-
-
-
-    Rect widest_strip_rect = Rect(0, 0, 0, 0) ;
-    for(const auto &strip : strips_with_good_rlsd) {
-		if(strip->rc().width > widest_strip_rect.width) {
-			widest_strip_rect = strip->rc() ;
-		}
-		if(cmdopt_verbose) {
-		//	std::cout << strip->rc() << ", Periodicity:" << run_length_second_diff(strip->runs()) << std::endl ;
-		}
     }
 
     //TODO: check if the strip has wide endcaps, so we can adjust the width
@@ -580,66 +570,16 @@ int process_file(std::string infilepath, const std::string dest_dir) {
 		std::cout << "Filtering strips for good width or alignment with the widest one." << std::endl ;
     }
 
-    std::vector<std::shared_ptr<ButtonStrip> > strips_with_good_width ;
-    const auto width_var_threshold = 0.05 ;
-    const auto pos_threshold = 0.08 ;
-    const auto pos_threshold_extreme = 0.008 ;
-    int extremely_aligned = 0 ;
-
-    for(const auto &strip: strips) {
-		const auto width_variance = abs(1 - (strip->rc().width * 1.0 / widest_strip_rect.width)) ;
-		const auto left_position_variance  = abs(strip->rc().x - widest_strip_rect.x) * 1.0 / src.cols ;
-		const auto right_position_variance = abs(strip->rc().br().x - widest_strip_rect.br().x) * 1.0 / src.cols ;
-
-
-        char closeness_indicator = ' ' ;
-        
-        //TODO : change this so it is good only if it passes as least two criteria, instead of one.
-
-        int closeness_counts = 0 ;
-
-        if(width_variance < width_var_threshold) {
-            closeness_counts++ ;
-        }
-		if (left_position_variance < pos_threshold) {
-            closeness_counts++ ;
-        }
-        if(right_position_variance < pos_threshold) {
-			closeness_counts++ ;
-		}
-
-        if(closeness_counts > 1){
-            strips_with_good_width.push_back(strip) ;
-            closeness_indicator = '+' ;
-        }
-
-
-        if(strip->rc() == widest_strip_rect) {
-            closeness_indicator = '0' ; //the widest strip, which we are comparing against
-        } else {		
-            if((left_position_variance < pos_threshold_extreme) && (right_position_variance < pos_threshold_extreme)) {
-                closeness_indicator = '!' ;
-                extremely_aligned++ ;
-            }
-        }
-
-		if(cmdopt_verbose) {
-            std::cout << closeness_indicator ;
-            std::cout << strip->rc() ;
-            std::cout << "; W: " << width_variance ;
-            std::cout << ", L: " << left_position_variance ;
-            std::cout << ", R: " << right_position_variance << std::endl ;
+    //std::vector<std::shared_ptr<ButtonStrip> > strips_with_good_width ;
+    Rect widest_strip_rect = Rect(0, 0, 0, 0) ;
+    for(const auto &strip : strips_with_good_rlsd) {
+		if(strip->rc().width > widest_strip_rect.width) {
+			widest_strip_rect = strip->rc() ;
 		}
     }
 
-/*
-    if(cmdopt_verbose) {
-        std::cout << "Strips with good width or position:" << std::endl ;
-        for(auto strip: strips_with_good_width) {
-            std::cout << strip->rc() << " : " << strip->rc().x << " <--> " << strip->rc().br().x << std::endl ;
-        }
-    }
-*/
+    auto strips_with_good_width = collect_aligned_strips(strips, src, widest_strip_rect);
+
 
     if(cmdopt_verbose) {
         std::cout << "Totaling widths and counts to calculate a mean..."  ;
@@ -929,6 +869,8 @@ int detect_button_strip_contours_stepped(Mat src, std::vector<std::vector<Point>
 
     return strip_detection_thresh ;
 }
+
+
 /* Find the button strip contours.
 @param Mat image : to detect button contours on 
 @param vector<vector<Point> >& button_strip_contours : destination for found contours
@@ -985,10 +927,10 @@ std::vector<int> adjusted_slot_counts(std::vector<std::shared_ptr<ButtonStrip> >
 
     for(const auto &strip : strips) {
         auto sep_lines = strip->slot_separators() ;
-        auto num_slots = sep_lines.size() - 1 ;
+        int num_slots = sep_lines.size() - 1 ;
         
         auto slots_span = sep_lines[sep_lines.size() - 1] - sep_lines[0];
-        int adjusted_num_slots = round(strip->rc().width * num_slots * 1.0 / slots_span) ;
+        int adjusted_num_slots = round(num_slots * (strip->rc().width * 1.0 / slots_span)) ;
 
         adjusted.push_back(adjusted_num_slots) ;
         
@@ -997,4 +939,70 @@ std::vector<int> adjusted_slot_counts(std::vector<std::shared_ptr<ButtonStrip> >
 
     return adjusted ;
 
+}
+
+/* Collect only the strips that are closely aligned (left and right edges) to a reference strip.
+*/
+std::vector<std::shared_ptr<ButtonStrip> > collect_aligned_strips(std::vector<std::shared_ptr<ButtonStrip> > strips, Mat src, Rect reference_strip_rc) {
+    std::vector<std::shared_ptr<ButtonStrip> > aligned_strips ;
+  
+    //const auto width_var_threshold = 0.05 ;
+    const auto pos_threshold = 0.08 ;
+    const auto pos_threshold_extreme = 0.01 ;
+    int extremely_aligned = 0 ;
+
+    for(const auto &strip: strips) {
+		// const auto width_variance = abs(1 - (strip->rc().width * 1.0 / widest_strip_rect.width)) ;
+        char closeness_indicator = ' ' ;
+        double left_variance, right_variance ;
+
+        if(strip->rc() == reference_strip_rc) {
+            closeness_indicator = '0' ; 
+            aligned_strips.push_back(strip) ;
+        } else {
+            // left_variance  = abs(strip->rc().x - reference_strip_rc.x) * 1.0 / src.cols ;
+            // right_variance = abs(strip->rc().br().x - reference_strip_rc.br().x) * 1.0 / src.cols ;
+
+            left_variance  = abs(strip->rc().x - reference_strip_rc.x) * 1.0 / reference_strip_rc.width ;
+            right_variance = abs(strip->rc().br().x - reference_strip_rc.br().x) * 1.0 / reference_strip_rc.width ;
+            
+            //A strip is good if both sides are moderately close, or at least one edge is very close.
+            
+            int closeness_counts = 0 ;
+
+            // if(width_variance < width_var_threshold) {
+            //     closeness_counts++ ;
+            // }
+            if (left_variance < pos_threshold) {
+                closeness_counts++ ;
+            }
+            if(right_variance < pos_threshold) {
+                closeness_counts++ ;
+            }
+
+            if(closeness_counts > 1){
+                aligned_strips.push_back(strip) ;
+                closeness_indicator = '+' ;
+            }
+
+
+            if((left_variance < pos_threshold_extreme) || (right_variance < pos_threshold_extreme)) {
+                closeness_indicator = '!' ;
+                extremely_aligned++ ;
+            }
+        }
+
+		if(cmdopt_verbose) {
+            std::cout << closeness_indicator ;
+            std::cout << strip->rc() ;
+            // std::cout << "; W: " << width_variance ;
+            if(closeness_indicator != '0') {
+                std::cout << ", L: " << left_variance ;
+                std::cout << ", R: " << right_variance ;
+            }
+            std::cout << std::endl ;
+		}
+    }
+
+    return aligned_strips ;
 }
