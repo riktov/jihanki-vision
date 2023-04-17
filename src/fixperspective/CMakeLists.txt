@@ -12,3 +12,5 @@ endif()
 if(EXIV2_FOUND)
     target_link_libraries (fixperspective exiv2)
 endif()
+
+install(TARGETS fixperspective DESTINATION bin)

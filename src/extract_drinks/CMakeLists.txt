@@ -12,3 +12,5 @@ if(WITH_GUI)
     add_library(extract_drinks_draw STATIC extract_drinks_draw.cpp)
     target_link_libraries (extract_drinks display extract_drinks_draw)
 endif()
+
+install(TARGETS extract_drinks DESTINATION bin)
