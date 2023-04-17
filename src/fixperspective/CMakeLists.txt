@@ -1,6 +1,7 @@
 project(fixperspective)
 
 add_executable(fixperspective fixperspective.cpp)
+add_library(perspective_lines STATIC perspective_lines.cpp)
 
 target_link_libraries (fixperspective ${OpenCV_LIBS} lines perspective_lines)
 

@@ -11,9 +11,7 @@ if(WITH_GUI) #and not MINGW
 endif()
 
 add_library(trim_rect STATIC trim_rect.cpp)
-add_library(threshold STATIC threshold.cpp)
 add_library(lines STATIC lines.cpp)
-add_library(perspective_lines STATIC perspective_lines.cpp)
 add_library(histogram STATIC histogram.cpp)
 
 target_link_libraries (histogram ${OpenCV_LIBS})

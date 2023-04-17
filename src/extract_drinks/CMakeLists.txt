@@ -5,6 +5,7 @@ add_library(extract_drinks_write STATIC extract_drinks_write.cpp)
 
 add_library(button_strip STATIC button_strip.cpp)
 add_library(run_length STATIC run_length.cpp)
+add_library(threshold STATIC threshold.cpp)
 
 target_link_libraries (extract_drinks ${OpenCV_LIBS} button_strip run_length lines trim_rect threshold extract_drinks_write)
 
