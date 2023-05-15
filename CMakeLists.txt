@@ -4,8 +4,9 @@ add_definitions(-g -std=c++11 -Wall)
 
 project (xxdummy)
 
-include_directories(/usr/local/include/opencv4)
+
 find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)
