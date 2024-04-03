@@ -2,8 +2,7 @@ cmake_minimum_required (VERSION 2.8.12)
 
 add_definitions(-g -std=c++11 -Wall)
 
-project (xxdummy)
-
+project (jihanki-vision)
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -31,12 +30,9 @@ endif()
 
 add_subdirectory(src)
 
-#this needs to be placed after a project declaration
-if(NOT MINGW)
-    message("It's a UNIX system. I know this!")
-    find_package(X11 REQUIRED)
-    link_libraries(${X11_LIBRARIES})
-    include_directories(${X11_INCLUDE_DIR})
-endif()
+find_package(X11)
+link_libraries(${X11_LIBRARIES})
+include_directories(${X11_INCLUDE_DIR})
+
 
 
