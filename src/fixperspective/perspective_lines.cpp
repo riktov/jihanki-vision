@@ -2,7 +2,7 @@
  * @file perspective_lines.cpp
  * @author Paul Richter (paul@sagasoda.com)
  * @brief A "perspective line" is a line on an image of a 3-D scene. We analyze collections of perspective lines
- * to determine if they are likely to depict lines that are physically parallel, or parts of the
+ * to determine if they are convergent and thus likely to depict lines that are physically parallel, or parts of the
  * same physical edge that is partically occluded.
  * @version 0.1
  * @date 2022-07-12
@@ -76,15 +76,18 @@ Vec4i perspective_line::full_line() {
 
 
 /**
- * @brief 
+ * @brief Rercursively merge a collection of lines into a new set of equal or fewer lines.
  * 
- * @param lines 
- * @param is_horizontal 
+ * @param lines vector of lines
+ * @param is_horizontal Boolean: 
+ * @param is_merged_only If true, do not return input lines which have been merged
  * @return std::vector<Vec4i> 
  */
 std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_lines, bool is_horizontal, bool is_merged_only) {
 
 	std::vector<perspective_line> plines_with_merges ;
+
+	auto num_lines_in = pers_lines.size() ;
 
 	//from the vector of plines, build a dictionary keyed by slope
 	std::map<int, std::vector<perspective_line> > lines_of_angle ;
@@ -110,12 +113,6 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 					perspective_line merged = merge_pline_collection(plines) ;
 					
 					plines_with_merges.push_back(merged) ;	
-
-					/*
-					for(auto plin : plines) {	//test
-						plines_with_merges.push_back(plin) ;
-					}				
-					*/
 				} else {
 					//push this single pline of this intercept on to lines
 					if(!is_merged_only) {
@@ -136,11 +133,17 @@ std::vector<perspective_line> merge_lines(std::vector<perspective_line> &pers_li
 		plines_with_merges.push_back(pline) ;
 	}
 */
+	auto num_lines_out = plines_with_merges.size() ;
+
+	if(num_lines_out > num_lines_in) {
+		return merge_lines(plines_with_merges, is_horizontal, is_merged_only) ;
+	}
+
 	return plines_with_merges ;
 }
 
 /**
- * @brief Merge a collection of collinear plines 
+ * @brief Merge a collection of collinear plines in to one line
  * 
  * @return perspective_line 
  */
@@ -216,8 +219,8 @@ void fill_angle_dict(std::map<int, std::vector<perspective_line> > &plines_of, c
 		int angle_key = int(plin.angle) ;
 
 		//round on 2 to merge bins
-		//const int key_resolution = 8 ;	//should depend on image size
-		//angle_key = (slope_key / key_resolution) * key_resolution ;
+		const int key_resolution = 8 ;	//should depend on image size
+		angle_key = (angle_key / key_resolution) * key_resolution ;
 
 		auto search = plines_of.find(angle_key) ;
 		if(search != plines_of.end()) {	//found
@@ -254,9 +257,8 @@ void fill_intercept_dict(std::map<int, std::vector<perspective_line> > &plines_o
 }
 
 /**
- * @brief 
- * 
- * Check that all similarly oriented lines transition in slope the same way.
+ * @brief Check that all similarly oriented lines transition in slope the same way.
+ * @param plines Collection of input lines
  */
 void slope_transitions(std::vector<perspective_line> plines) {
 	//sort the plines by intercept
@@ -284,7 +286,9 @@ void slope_transitions(std::vector<perspective_line> plines) {
 		int im_diff_before = im_this - im_before ;
 		// int im_diff_after  = im_after - im_this ;
 
-		
+		//calculate the ratio of spacing between zero-intercepts and max-intercepts
+		//for two adjacent lines. This should be fairly constant.
+
 		float ratio_before = (1.0 * iz_diff_before) / im_diff_before ;
 		// float ratio_after  = (1.0 * iz_diff_after) / im_diff_after ;
 
@@ -294,3 +298,12 @@ void slope_transitions(std::vector<perspective_line> plines) {
 	std::cout << std::endl ;
 }
 
+//New method: get the convergence points for all lines, place them in bins, and get the most populated bin
+//Iterate through the lines again, and keep only lines that pass through that area.
+void check_convergence(std::vector<perspective_line> plines) {
+	//if there are three or fewer lines, we can not determine which point is valid
+
+	//we should get convergence points only for lines which are sufficiently separated.
+	//If they are too close, slight variations in slope will make the point vary greatly, 
+	//even vary it between positive and negative.
+}

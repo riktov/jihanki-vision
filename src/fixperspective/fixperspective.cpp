@@ -28,13 +28,13 @@
 #include <unistd.h>
 #include <libgen.h>
 
-#include "lines.hpp"
+#include "../lines.hpp"
 #include "perspective_lines.hpp"
 
 
 #ifdef USE_GUI
 #include "fixperspective_draw.hpp"
-#include "display.hpp"
+#include "../display.hpp"
 #endif
 
 
@@ -237,7 +237,7 @@ int process_file(char *filename, const char *dest_file) {
 	// blur(img_gray, img_gray, Size(3, 3));
 	// blur(img_hue, img_hue, Size(3, 3));
 
-	//a test image for plotting lines
+	//a test image for plotting lines. We want a gray image on which we can plot colored lines
 	Mat img_plot ;
 	cvtColor(src, img_plot, COLOR_BGR2GRAY) ;
 	cvtColor(img_plot, img_plot, COLOR_GRAY2BGR) ;
@@ -251,10 +251,11 @@ int process_file(char *filename, const char *dest_file) {
 	// return 0 ;
 	Mat img_dense_combined ;
 	Mat img_edges_combined ;
+
 	std::vector<Mat> channel_images_edges ;
 
 	
-	//Get canny corners for each channel, 
+	//Get canny edges for each channel, 
 	//combine them, and create a dense block mask which can be applied to all channels.
 	//Save the canny images for another pass to detect lines on each of them
 	for(auto img: imgs) {
@@ -314,7 +315,9 @@ int process_file(char *filename, const char *dest_file) {
 		//build vectors of perspective_lines, so we can merge and detect off-kilter lines
 		std::vector<perspective_line> horizontal_plines, vertical_plines ;
 		
-		std::cout << "Filling plines: " << std::endl ;
+		if(cmdopt_verbose) {
+			std::cout << "Filling plines: " << std::endl ;
+		}
 		for(auto lin : horizontal_lines) { horizontal_plines.push_back(perspective_line(lin)) ; }
 		for(auto lin : vertical_lines) { vertical_plines.push_back(perspective_line(lin)) ; }
 		// fill_perspective_lines(horizontal_plines, horizontal_lines) ;
@@ -333,8 +336,8 @@ int process_file(char *filename, const char *dest_file) {
 		plot_lines(img_edges_masked, horizontal_plines, Scalar(31, 227, 255)) ;
 		plot_lines(img_edges_masked, vertical_plines, Scalar(31, 227, 255)) ;
 
-		annotate_plines(img_edges_masked, horizontal_plines) ;
-		annotate_plines(img_edges_masked, vertical_plines) ;
+		annotate_plines(img_edges_masked, horizontal_plines, Scalar(255, 255, 127)) ;
+		annotate_plines(img_edges_masked, vertical_plines, Scalar(127, 255, 255)) ;
 
 		std::string label_edges = "Edges " + std::string(channel_img_names[i]) ;
 		imshow(label_edges , scale_for_display(img_edges_masked)) ;
@@ -348,32 +351,19 @@ int process_file(char *filename, const char *dest_file) {
 		exit(-19) ;
 	}
 
-	/*
-	std::cout << "Horizontal plines in slope-intercept format" << std::endl ;
-	for(auto plin : plines_combined_horizontal) {
-		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
-	}
-	std::cout << std::endl ;
-
-	std::cout << "Vertical plines in slope-intercept format" << std::endl ;
-	for(auto plin : plines_combined_vertical) {
-		std::cout << plin.slope << ":" << plin.zero_intercept << ",  " ;
-	}
-	std::cout << std::endl ;
-	*/
 
 	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
-	std::cout << "Merging horizontal collinears" << std::endl ;
+	//Merge collinears before checking convergence because collinears will not have 
+	//an accurate convergence point.
+	std::cout << "Merging collinears" << std::endl ;
 	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, false) ;
-	std::cout << "Merging vertical collinears" << std::endl ;
 	auto merged_vertical_plines = merge_lines(plines_combined_vertical, false) ;
 
 	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
 	std::cout << "Vert plines after merged: " << merged_vertical_plines.size() << std::endl ;
 	
-	std::cout << "Check convergence for horizontals" << std::endl ;
+	std::cout << "Check convergence" << std::endl ;
 	slope_transitions(merged_horizontal_plines) ;
-	std::cout << "Check convergence for verticals" << std::endl ;
 	slope_transitions(merged_vertical_plines) ;
 	
 
@@ -414,8 +404,8 @@ int process_file(char *filename, const char *dest_file) {
 
 		plot_lines(img_merged_lines, merged_horizontal_plines, Scalar(255, 127, 255)) ;
 		plot_lines(img_merged_lines, merged_vertical_plines, Scalar(255, 127, 255)) ;
-		annotate_plines(img_merged_lines, merged_horizontal_plines) ;
-		annotate_plines(img_merged_lines, merged_vertical_plines) ;
+		annotate_plines(img_merged_lines, merged_horizontal_plines, Scalar(255, 255, 127)) ;
+		annotate_plines(img_merged_lines, merged_vertical_plines, Scalar(127, 255, 255)) ;
 		imshow("Merged (only) lines", scale_for_display(img_merged_lines)) ;		
 
 		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
@@ -497,7 +487,7 @@ std::vector<Vec4i> detect_bounding_lines(Mat img_cann, int strip_offset) {
 
 	auto min_length = is_vertical ? min_horizontal_length : min_vertical_length ;
 
-	// HoughLinesP(img_cann, lines, 1, CV_PI/45, hough_threshold, min_length, max_gap) ;
+	//HoughLinesP(img_cann, lines, 1, CV_PI/45, hough_threshold, min_length, max_gap) ;
 	HoughLinesP(img_cann, lines, 1, CV_PI/180, hough_threshold, min_length, max_gap) ;
 
 	int num_all_detected = -1 ;
@@ -929,7 +919,7 @@ Mat find_dense_areas(Mat img_edges) {
 
 	// threshold(img_working, img_working, 31, 255, THRESH_BINARY) ;
 
-	std::cout << "Image size after " << pyr_factor << " pyrDown: " << img_working.size() << std:: endl ;  
+	// std::cout << "Image size after " << pyr_factor << " pyrDown: " << img_working.size() << std:: endl ;  
 	for(int i = 0 ; i <  pyr_factor ; i++) {
 		pyrUp(img_working, img_working);
 	}
