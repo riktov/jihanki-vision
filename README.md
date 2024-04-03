@@ -4,7 +4,7 @@ A set of programs for processing and identifying images of Japanese drink vendin
 - extract_drinks: extracts images of the individual drink slots in the display window, and identifies the configurations (rows x columns).
 - identify_drinks: identifies images of drink containers based on a collection of previously identified images.
 
-All programs are at a "functional proof of concept" level, and are not consitently accurate. 
+All programs are at a "functional proof of concept" level, and are not consistently accurate. Use at your own risk. 
 
 自販機の画像を識別するプログラムです。対象は日本で使われている飲料自販機に特化しています。
 - fixperspective: 画像の遠近を修正。日本の自販機に特化した最適化が幾つか含まれています。
