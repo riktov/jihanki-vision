@@ -150,7 +150,6 @@ std::vector<int> top_boundary(const Mat &src) {
         }
     }
     return dots ;
-
 }
 
 /* Given a monochrome image, return an array of the topmost or bottommost white pixel's row position 

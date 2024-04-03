@@ -141,10 +141,11 @@ void plot_lines(cv::Mat img, const std::pair<perspective_line, perspective_line>
 	plot_lines(img, lines, color) ;	
 }
 
-void annotate_plines(Mat img, const std::vector<perspective_line> plines) {
+void annotate_plines(Mat img, const std::vector<perspective_line> plines, Scalar color) {
+	int scale = 2 * img.rows  / 3000  ;
 	for(auto plin : plines) {
 		float angle = angle_deg(plin.line) ;
 		std::string label = std::to_string(cvRound(angle)) + ":" + std::to_string(plin.zero_intercept) ;
-		cv::putText(img, label, Point(plin.line[0], plin.line[1]), FONT_HERSHEY_DUPLEX, 2, Scalar(255, 255, 2)) ;
+		cv::putText(img, label, Point(plin.line[0], plin.line[1]), FONT_HERSHEY_SIMPLEX, scale, color) ;
 	}
 }

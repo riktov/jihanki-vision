@@ -3,5 +3,5 @@ void plot_margins(cv::Mat &img, cv::Rect rc) ;
 void plot_lines(cv::Mat img, const std::vector<cv::Vec4i> lines, cv::Scalar color) ;
 void plot_lines(cv::Mat img, const std::vector<perspective_line> plines, cv::Scalar color) ;
 void plot_lines(cv::Mat img, const std::pair<perspective_line, perspective_line> plines, cv::Scalar color) ;
-void annotate_plines(cv::Mat img, const std::vector<perspective_line> plines) ;
+void annotate_plines(cv::Mat img, const std::vector<perspective_line> plines, cv::Scalar color) ;
 
