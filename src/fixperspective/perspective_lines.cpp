@@ -388,7 +388,7 @@ std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) {
 		if(abs(ratio_before) < max_ratio && abs(ratio_before) > min_ratio) {
 			// filtered.push_back(plines.at(i - 1)) ;
 		} else {
-			std::cout << "Detected skewed line: " << cvRound(plines.at(i).angle) << ":" << plines.at(i).zero_intercept << std::endl ;
+			std::cout << "Detected skewed line: " << plines.at(i).as_string() << std::endl ;
 		}
 
 		filtered.push_back(plines.at(i - 1)) ;	//temporarily override if block
