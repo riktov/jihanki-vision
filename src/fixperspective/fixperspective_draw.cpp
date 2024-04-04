@@ -120,7 +120,7 @@ void plot_lines(Mat img, const std::vector<Vec4i> lines, Scalar color) {
 	}
 }
 
-void plot_lines(cv::Mat img, const std::vector<perspective_line> plines, cv::Scalar color) {
+void plot_lines(cv::Mat img, const std::vector<ortho_line> plines, cv::Scalar color) {
 	std::vector<Vec4i> lines ;
 	/*
 	std::transform(plines.begin(), plines.end(), lines.begin(), [](perspective_line plin){
@@ -133,7 +133,7 @@ void plot_lines(cv::Mat img, const std::vector<perspective_line> plines, cv::Sca
 	plot_lines(img, lines, color) ;
 }
 
-void plot_lines(cv::Mat img, const std::pair<perspective_line, perspective_line> plines, cv::Scalar color) {
+void plot_lines(cv::Mat img, const std::pair<ortho_line, ortho_line> plines, cv::Scalar color) {
 	std::vector<Vec4i> lines ;
 	lines.push_back(plines.first.line) ;	
 	lines.push_back(plines.second.line) ;
@@ -141,11 +141,9 @@ void plot_lines(cv::Mat img, const std::pair<perspective_line, perspective_line>
 	plot_lines(img, lines, color) ;	
 }
 
-void annotate_plines(Mat img, const std::vector<perspective_line> plines, Scalar color) {
-	int scale = 2 * img.rows  / 3000  ;
+void annotate_plines(Mat img, const std::vector<ortho_line> plines, Scalar color, float scale = 1) {
+	auto fontscale = 0.5 ;
 	for(auto plin : plines) {
-		float angle = angle_deg(plin.line) ;
-		std::string label = std::to_string(cvRound(angle)) + ":" + std::to_string(plin.zero_intercept) ;
-		cv::putText(img, label, Point(plin.line[0], plin.line[1]), FONT_HERSHEY_SIMPLEX, scale, color) ;
+		cv::putText(img, plin.as_string(), Point(plin.line[0] * scale, plin.line[1] * scale), FONT_HERSHEY_SIMPLEX, fontscale, color) ;
 	}
 }

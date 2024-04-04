@@ -1,8 +1,8 @@
 /**
  * @file perpsective_lines.hpp
  * @author Paul Richter (paul@sagasoda.com)
- * @brief A "perspective line" is a line on an image of a 3-D scene. We analyze collections of perspective lines
- * to determine if they are likely to depict lines that are physically parallel, or parts of the
+ * @brief An ortho line is a line that is close to vertical or horizontal. We analyze collections of ortho lines
+ * to determine if they are convergent and thus likely to depict lines that are physically parallel, or parts of the
  * same physical edge that is partically occluded.
  * @version 0.1
  * @date 2022-07-12
@@ -12,7 +12,7 @@
  */
 
 //structs and classes
-struct perspective_line {
+struct ortho_line {
 	cv::Vec4i line ;
 	int slope ;
 	float angle ;
@@ -22,10 +22,18 @@ struct perspective_line {
 	const static int max_edge = 5000 ;
 
 	//ctor
-	perspective_line(cv::Vec4i) ;
-	cv::Vec4i full_line() ;
+	ortho_line(cv::Vec4i) ;
+	ortho_line(float angle, int zero_intercept, bool is_horizontal, int min_extent, int max_extent) ;
+	cv::Vec4i full_line() const ;
+	int intercept_at(int orth) const ;
+	std::string as_string() const ;
+	bool is_horizontal() const ;
 } ;
 
-void fill_perspective_lines(std::vector<perspective_line> &plines, std::vector<cv::Vec4i> lines) ;
-std::vector<perspective_line> merge_lines(std::vector<perspective_line> &plines, bool is_horizontal, bool is_merged_only=false) ;
-void slope_transitions(std::vector<perspective_line> plines) ;
+void fill_perspective_lines(std::vector<ortho_line> &plines, std::vector<cv::Vec4i> lines) ;
+std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &plines, bool is_horizontal, bool is_merged_only=false) ;
+std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int intercept = 0) ;
+std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) ;
+ortho_line merge_combine_average(ortho_line pl1, ortho_line pl2) ;
+
+

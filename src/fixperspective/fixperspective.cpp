@@ -57,9 +57,9 @@ std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> src_quad_pts, std::vector<Point2f> dst_rect_pts) ;
 Mat find_dense_areas(Mat img_edges) ;
 std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int gap) ;
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> lines, int gap) ;
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<ortho_line> lines, int gap) ;
 std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int gap) ;
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> lines, int gap) ;
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<ortho_line> lines, int gap) ;
 Rect trim_dense_edges(Mat src) ;
 
 #ifdef USE_EXIV2
@@ -178,6 +178,7 @@ int process_file(char *filename, const char *dest_file) {
 		"gray (C)", "hue(Y)", "val (M)", "blue", "green", "red"
 	} ;
 
+	/*
 	const Scalar colors[] = {
 		Scalar(255, 255, 0),	//cyan
 		Scalar(255, 0, 255),	//magenta
@@ -186,7 +187,7 @@ int process_file(char *filename, const char *dest_file) {
 		Scalar(0, 255, 0),
 		Scalar(0, 0, 255)
 	} ;
-
+	*/
 
 	auto src  = imread(filename, 1) ; //color
   
@@ -283,8 +284,8 @@ int process_file(char *filename, const char *dest_file) {
 	channel_images_edges.push_back(img_edges_gray) ;
 
 
-	//declare the variables that will accumulate through the channels, below
-	std::vector<perspective_line> plines_combined_horizontal, plines_combined_vertical ;
+	//line collections that will accumulate through the channels
+	std::vector<ortho_line> plines_combined_horizontal, plines_combined_vertical ;
 	
 	int i = 0 ;
 	
@@ -313,23 +314,23 @@ int process_file(char *filename, const char *dest_file) {
 		}
 		
 		//build vectors of perspective_lines, so we can merge and detect off-kilter lines
-		std::vector<perspective_line> horizontal_plines, vertical_plines ;
+		std::vector<ortho_line> horizontal_plines, vertical_plines ;
 		
 		if(cmdopt_verbose) {
 			std::cout << "Filling plines: " << std::endl ;
 		}
-		for(auto lin : horizontal_lines) { horizontal_plines.push_back(perspective_line(lin)) ; }
-		for(auto lin : vertical_lines) { vertical_plines.push_back(perspective_line(lin)) ; }
+		for(auto lin : horizontal_lines) { horizontal_plines.push_back(ortho_line(lin)) ; }
+		for(auto lin : vertical_lines) { vertical_plines.push_back(ortho_line(lin)) ; }
 		// fill_perspective_lines(horizontal_plines, horizontal_lines) ;
 		// fill_perspective_lines(vertical_plines, vertical_lines) ;
 
-		//accumulate the plines from this pass
+		//accumulate the plines from this channel image
 		plines_combined_horizontal.insert(plines_combined_horizontal.end(), horizontal_plines.begin(), horizontal_plines.end()) ;
 		plines_combined_vertical.insert(plines_combined_vertical.end(), vertical_plines.begin(), vertical_plines.end()) ;
 
 		cvtColor(img, img, COLOR_GRAY2BGR) ;
 	
-		//the edge image
+		//the edge image for this channel
 		cvtColor(img_edges_masked, img_edges_masked, COLOR_GRAY2BGR) ;
 
 		#ifdef USE_GUI
@@ -346,8 +347,27 @@ int process_file(char *filename, const char *dest_file) {
 		i++ ;
 	}
 
+
+	#ifdef USE_GUI
+	if(!cmdopt_batch) {
+		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
+		plot_lines(img_dense_combined, plines_combined_horizontal, Scalar(127, 0, 255)) ;
+		plot_lines(img_dense_combined, plines_combined_vertical, Scalar(127, 0, 255)) ;
+
+		std::string label = "Blocks with unmerged lines, H:" + 
+			std::to_string(plines_combined_horizontal.size()) + ", V:" + 
+			std::to_string(plines_combined_vertical.size());
+		imshow(label , scale_for_display(img_dense_combined)) ;
+	}
+	#endif
+
 	if((plines_combined_horizontal.size() < 2) || (plines_combined_vertical.size() < 2)) {
-		std::cerr << "Not enough horiz and vert lines before merge and converge, bailing" << std::endl ;
+		std::cerr << "BAILING: Too few horiz and vert lines before merge and converge" << std::endl ;
+		#ifdef USE_GUI
+		if(!cmdopt_batch) {
+			waitKey() ;
+		}
+		#endif
 		exit(-19) ;
 	}
 
@@ -355,21 +375,29 @@ int process_file(char *filename, const char *dest_file) {
 	// std::map<int, std::vector<Vec4i> > hline_bins, vline_bins ;
 	//Merge collinears before checking convergence because collinears will not have 
 	//an accurate convergence point.
+
 	std::cout << "Merging collinears" << std::endl ;
-	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, false) ;
-	auto merged_vertical_plines = merge_lines(plines_combined_vertical, false) ;
+	std::cout << " - horizontal" << std::endl ;
+	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, img_gray.cols / 2) ;
+	std::cout << " - vertical" << std::endl ;
+	auto merged_vertical_plines = merge_lines(plines_combined_vertical, img_gray.rows / 2) ;
 
 	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
 	std::cout << "Vert plines after merged: " << merged_vertical_plines.size() << std::endl ;
 	
-	std::cout << "Check convergence" << std::endl ;
-	slope_transitions(merged_horizontal_plines) ;
-	slope_transitions(merged_vertical_plines) ;
+	std::cout << "Filtering out skewed lines" << std::endl ;
+	// merged_horizontal_plines = filter_skewed_lines(merged_horizontal_plines) ;
+	// merged_vertical_plines = filter_skewed_lines(merged_vertical_plines) ;
 	
 
 	//Check if we have at least two verticals and horzontals each, or bail
 	if((merged_horizontal_plines.size() < 2) || (merged_vertical_plines.size() < 2)) {
-		std::cout << "Not enough horiz and vert lines after merge and converge, bailing" << std::endl ;
+		std::cout << "BAILING: Too few horiz or vert lines after merge and converge" << std::endl ;
+		#ifdef USE_GUI
+		if(!cmdopt_batch) {
+			waitKey() ;
+		}
+		#endif
 		exit(-19) ;
 	}
 
@@ -393,22 +421,18 @@ int process_file(char *filename, const char *dest_file) {
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
 		std::string label ;
-		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
-		//make any needed clones here before drawing on it.
 		Mat img_merged_lines = Mat::zeros(img_gray.size(), CV_8UC3) ;
-
-
-		plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
-		plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
-
-
 		plot_lines(img_merged_lines, merged_horizontal_plines, Scalar(255, 127, 255)) ;
-		plot_lines(img_merged_lines, merged_vertical_plines, Scalar(255, 127, 255)) ;
-		annotate_plines(img_merged_lines, merged_horizontal_plines, Scalar(255, 255, 127)) ;
-		annotate_plines(img_merged_lines, merged_vertical_plines, Scalar(127, 255, 255)) ;
-		imshow("Merged (only) lines", scale_for_display(img_merged_lines)) ;		
+		plot_lines(img_merged_lines, merged_vertical_plines, Scalar(255, 255, 127)) ;
+		
+		auto img_merged_scaled = scale_for_display(img_merged_lines) ;
+		float scale = img_merged_scaled.cols * 1.0 / img_merged_lines.cols ;
 
-		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
+		annotate_plines(img_merged_scaled, merged_horizontal_plines, Scalar(127, 255, 127), scale) ;
+		annotate_plines(img_merged_scaled, merged_vertical_plines, Scalar(127, 255, 255), scale) ;
+		
+
+		imshow("Merged (only) lines", img_merged_scaled) ;		
 
 		std::vector<Vec4i> full_lines_horizontal, full_lines_vertical ;
 		for(auto lin: plines_combined_horizontal) {
@@ -419,19 +443,12 @@ int process_file(char *filename, const char *dest_file) {
 			full_lines_horizontal.push_back(lin.full_line()) ;
 		}
 		*/
-
-		plot_lines(img_dense_combined, full_lines_horizontal, Scalar(127, 0, 255)) ;
-		plot_lines(img_dense_combined, plines_combined_vertical, Scalar(127, 0, 255)) ;
-
-		label = "Blocks with unmerged lines, H:" + 
-			std::to_string(plines_combined_horizontal.size()) + ", V:" + 
-			std::to_string(plines_combined_vertical.size());
-		imshow(label , scale_for_display(img_dense_combined)) ;
-
 		// imshow("Edges combined" , scale_for_display(img_edges_combined)) ;
 		// plot_lines(img_plot, lines, Scalar(127, 0, 255)) ;
+		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
+		plot_lines(img_gray, best_verticals, Scalar(255, 31, 255)) ;
+		plot_lines(img_gray, best_horizontals, Scalar(255, 255, 31)) ;
 		imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
-		// imshow("Test plot on strips" , scale_for_display(img_plot)) ;
 
 		std::string transformed_window_title = std::string("Corrected Image") ;
 		imshow(transformed_window_title, scale_for_display(transformed_image)) ;
@@ -1010,7 +1027,7 @@ std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int min_
 }
 
 
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> plines, int min_space) {
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<ortho_line> plines, int min_space) {
 	std::vector<Vec4i> lines ;
 	for(auto plin : plines) {
 		lines.push_back(plin.line) ;
@@ -1018,7 +1035,7 @@ std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<perspective_line> plines
 	return best_vertical_lines(lines, min_space) ;
 }
 
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<perspective_line> plines, int min_space) {
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<ortho_line> plines, int min_space) {
 	std::vector<Vec4i> lines ;
 	for(auto plin : plines) {
 		lines.push_back(plin.line) ;
