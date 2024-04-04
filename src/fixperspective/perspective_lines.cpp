@@ -46,19 +46,19 @@ ortho_line::ortho_line(Vec4i lin)
 		//the y intercept is the point where the line crosses the y-axis. It is the y value, where the point's x value is 0.
 		if(this->slope == 0) {
 			this->zero_intercept = lin[1] ;	//or 3
-			this->max_intercept  = lin[1] ;	//or 3
+			// this->max_intercept  = lin[1] ;	//or 3
 		} else {
 			this->zero_intercept = lin[1] - (lin[0] / this->slope) ;
-			this->max_intercept  = lin[1] + ((this->max_edge - lin[0]) / this->slope) ;
+			// this->max_intercept  = lin[1] + ((this->max_edge - lin[0]) / this->slope) ;
 		}
 	} else {
 		//the x intercept is the point where the line crosses the x-axis. It is the x value, where the point's y value is 0.
 		if(this->slope == 0) {
 			this->zero_intercept = lin[0] ;
-			this->max_intercept  = lin[0] ;
+			// this->max_intercept  = lin[0] ;
 		} else {
 			this->zero_intercept = lin[0] - (lin[1] / this->slope) ;
-			this->max_intercept  = lin[0] + ((this->max_edge - lin[1]) / this->slope) ;
+			// this->max_intercept  = lin[0] + ((this->max_edge - lin[1]) / this->slope) ;
 		}
 	}
 	this->angle = angle_deg(this->line) ;
@@ -73,13 +73,13 @@ ortho_line::ortho_line (float angle, int zero_intercept, bool is_horizontal, int
 	}
 }
 
-Vec4i ortho_line::full_line() const {
+Vec4i ortho_line::full_line(int max_edge) const {
 	bool is_horizontal = abs(this->line[0] - this->line[2]) > abs(this->line[1] - this->line[3]) ;
 
 	if(is_horizontal) {
-		return Vec4i(0, this->zero_intercept, this->max_edge, this->max_intercept) ;
+		return Vec4i(0, this->zero_intercept, max_edge, this->intercept_at(max_edge)) ;
 	} else {
-		return Vec4i(this->zero_intercept, 0, this->max_intercept, this->max_edge) ;
+		return Vec4i(this->zero_intercept, 0, this->intercept_at(max_edge), max_edge) ;
 	}
 }
 
@@ -174,11 +174,11 @@ std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &pers_lines, 
  * @param intercept where to compare the distance between lines
  * @return std::vector<ortho_line> 
  */
-std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int intercept) {
+std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercept) {
 	const int ANGLE_DELTA = 1 ;
 	const int INTERCEPT_DELTA = 10 ;
 
-	std::sort(plines.begin(), plines.end(), 
+	std::sort(lines.begin(), lines.end(), 
 	[](ortho_line pl1, ortho_line pl2){
 		// return pl1.angle < pl2.angle ;
 		return pl1.zero_intercept < pl2.zero_intercept ;
@@ -186,9 +186,9 @@ std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int interce
 
 	std::vector<ortho_line> merged ;
 
-	for(size_t i = 1 ; i < plines.size() ; i++) {
-		ortho_line p_prev = plines.at(i - 1) ;
-		ortho_line p_this = plines.at(i) ;
+	for(size_t i = 1 ; i < lines.size() ; i++) {
+		ortho_line p_prev = lines.at(i - 1) ;
+		ortho_line p_this = lines.at(i) ;
 
 		if( (abs(p_prev.angle - p_this.angle) < ANGLE_DELTA) &&
 			(abs(p_prev.intercept_at(intercept) - p_this.intercept_at(intercept)) < INTERCEPT_DELTA)) {
@@ -203,7 +203,7 @@ std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int interce
 			i++ ;			
 		} else {
 			merged.push_back(p_prev) ;
-			if((i + 1) == plines.size()) {
+			if((i + 1) == lines.size()) {
 				merged.push_back(p_this) ;
 			}				
 			if(cmdopt_verbose) {
@@ -213,10 +213,10 @@ std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int interce
 	}
 
 	if(cmdopt_verbose) {
-		std::cout << "Merged " << plines.size() << " lines in to " << merged.size() << std::endl ;
+		std::cout << "Merged " << lines.size() << " lines in to " << merged.size() << std::endl ;
 	}
 
-	if(plines.size() > merged.size()) {
+	if(lines.size() > merged.size()) {
 		return merge_lines(merged, intercept) ;
 	}
 
@@ -341,15 +341,15 @@ void fill_intercept_dict(std::map<int, std::vector<ortho_line> > &plines_of, con
  * @brief Check that all similarly oriented lines transition in slope the same way.
  * @param plines Collection of input lines
  */
-std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) {
+std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> lines, int max_edge) {
 	//sort the plines by intercept
 
-	std::sort(plines.begin(), plines.end(), 
+	std::sort(lines.begin(), lines.end(), 
 	[](ortho_line pl1, ortho_line pl2){
 		return pl1.zero_intercept < pl2.zero_intercept ;
 	}) ;
 
-	int iz_before, iz_this, iz_after ;
+	int iz_prev, iz_this, iz_after ;
 	int im_before, im_this, im_after ;
 	std::vector<ortho_line> filtered ;
 	std::vector<float> ratios ;
@@ -358,16 +358,19 @@ std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) {
 	const auto max_ratio = 3 ;
 	const auto min_ratio = 0.3 ;
 	
-	for(size_t i = 1 ; i < plines.size() ; i++) {
-		iz_before = plines.at(i - 1).zero_intercept ;
-		iz_this   = plines.at(i).zero_intercept ;
+	for(size_t i = 1 ; i < lines.size() ; i++) {
+		auto prev_line = lines.at(i - 1) ;
+		auto this_line = lines.at(i) ;
+
+		iz_prev = prev_line.zero_intercept ;
+		iz_this   = this_line.zero_intercept ;
 		// iz_after  = plines.at(i + 1).zero_intercept ;
 
-		im_before = plines.at(i - 1).max_intercept ;
-		im_this   = plines.at(i).max_intercept ;
+		im_before = prev_line.intercept_at(max_edge) ;
+		im_this   = this_line.intercept_at(max_edge) ;
 		// im_after  = plines.at(i + 1).max_intercept ;
 
-		int iz_diff_before = iz_this - iz_before ;
+		int iz_diff_before = iz_this - iz_prev ;
 		// int iz_diff_after  = iz_after - iz_this ;
 
 		int im_diff_before = im_this - im_before ;
@@ -388,19 +391,19 @@ std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) {
 		if(abs(ratio_before) < max_ratio && abs(ratio_before) > min_ratio) {
 			// filtered.push_back(plines.at(i - 1)) ;
 		} else {
-			std::cout << "Detected skewed line: " << plines.at(i).as_string() << std::endl ;
+			std::cout << "Detected skewed line: " << lines.at(i).as_string() << std::endl ;
 		}
 
-		filtered.push_back(plines.at(i - 1)) ;	//temporarily override if block
+		filtered.push_back(lines.at(i - 1)) ;	//temporarily override if block
 
 
 		std::cout << ratio_before ; //<< std::endl ;
 
-		std::cout << " (" << cvRound(plines.at(i - 1).angle) ;
-		std::cout << ':' << plines.at(i - 1).zero_intercept << ") -" ;
+		std::cout << " (" << cvRound(lines.at(i - 1).angle) ;
+		std::cout << ':' << lines.at(i - 1).zero_intercept << ") -" ;
 
-		std::cout << " (" << cvRound(plines.at(i).angle) ;
-		std::cout << ':' << plines.at(i).zero_intercept << ")" ;
+		std::cout << " (" << cvRound(lines.at(i).angle) ;
+		std::cout << ':' << lines.at(i).zero_intercept << ")" ;
 
 		std::cout << std::endl ;
 	}

@@ -17,23 +17,22 @@ struct ortho_line {
 	int slope ;
 	float angle ;
 	int zero_intercept ;
-	int max_intercept ;
-
-	const static int max_edge = 5000 ;
 
 	//ctor
 	ortho_line(cv::Vec4i) ;
 	ortho_line(float angle, int zero_intercept, bool is_horizontal, int min_extent, int max_extent) ;
-	cv::Vec4i full_line() const ;
+
+	//methods
+	cv::Vec4i full_line(int max_edge) const ;
 	int intercept_at(int orth) const ;
 	std::string as_string() const ;
 	bool is_horizontal() const ;
 } ;
 
-void fill_perspective_lines(std::vector<ortho_line> &plines, std::vector<cv::Vec4i> lines) ;
-std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &plines, bool is_horizontal, bool is_merged_only=false) ;
-std::vector<ortho_line> merge_lines(std::vector<ortho_line> &plines, int intercept = 0) ;
-std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> plines) ;
+void fill_perspective_lines(std::vector<ortho_line> &olines, std::vector<cv::Vec4i> lines) ;
+std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &lines, bool is_horizontal, bool is_merged_only=false) ;
+std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercept = 0) ;
+std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> lines, int max_edge) ;
 ortho_line merge_combine_average(ortho_line pl1, ortho_line pl2) ;
 
 

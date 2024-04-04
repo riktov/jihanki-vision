@@ -436,7 +436,7 @@ int process_file(char *filename, const char *dest_file) {
 
 		std::vector<Vec4i> full_lines_horizontal, full_lines_vertical ;
 		for(auto lin: plines_combined_horizontal) {
-			full_lines_horizontal.push_back(lin.full_line()) ;
+			full_lines_horizontal.push_back(lin.full_line(img_gray.cols)) ;
 		}
 		/*
 		for(auto lin: plines_combined_vertical) {
