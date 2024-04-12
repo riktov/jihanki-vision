@@ -28,6 +28,7 @@ std::pair<int, int> screen_dims() {
         Screen*  scrn = DefaultScreenOfDisplay(disp);
         int width  = scrn->width;
         int height = scrn->height;
+        XCloseDisplay(disp) ;
     #endif
 
     return std::make_pair(width, height) ;
