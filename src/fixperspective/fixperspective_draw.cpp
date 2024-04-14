@@ -141,6 +141,12 @@ void plot_lines(cv::Mat img, const std::pair<ortho_line, ortho_line> plines, cv:
 	plot_lines(img, lines, color) ;	
 }
 
+void plot_lines(cv::Mat img, Vec4i lin, cv::Scalar color) {
+	std::vector<Vec4i> lines ;
+	lines.push_back(lin) ;	
+	return plot_lines(img, lines, color) ;
+}
+
 void annotate_plines(Mat img, const std::vector<ortho_line> plines, Scalar color, float scale = 1) {
 	auto fontscale = 0.5 ;
 	for(auto plin : plines) {

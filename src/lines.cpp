@@ -66,7 +66,7 @@ float angle_deg(Vec4i line) {
 	} else {
 		angle = atan((1.0 * dy) / dx) ; 
 	}
-	return angle * 180 / M_PI ;
+	return angle * 180 / CV_PI ; //or M_PI
 }
 
 /**
@@ -90,13 +90,7 @@ int normalized_slope(Vec4i line) {
 		slope = dx / dy ;
 	}
 
-	// std::cout << "Normalized slope of " << line << ": " << slope << std::endl ;
 	return slope ;
-}
-
-
-inline int horizontal_length(int x1, int x2) {
-  return abs(x1 - x2) ;
 }
 
 float y_intercept(cv::Vec4i lin) {
@@ -196,17 +190,6 @@ cv::Vec4i rt_to_pt(float rho, float theta, double alpha) {
 }
 
 
-/**
- * @brief Is the line a zero-line: a degenerate line with all points zero
- * 
- * @param l A line
- * @return true Line is a zero-line
- * @return false Line is not zero-line
- */
-bool is_zero_line(const cv::Vec4i l) {
-  return (l[0] == 0 && l[1] == 0 && l[2] == 0 && l[3] == 0) ;
-}
-
 bool is_edge_line(cv::Mat img, cv::Vec4i l) {
   if (l[0] == 0 && l[2] == 0) { //left
     return true ;
@@ -253,14 +236,14 @@ bool xxxis_collinear(cv::Vec4i l1, cv::Vec4i l2, double max_diff_angle) {
 	connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[0], l2[1])) ;
 	connectors.push_back(cv::Vec4i(l1[2], l1[3], l2[2], l2[3])) ;
 
-  std::vector<double> slopes ;
+	std::vector<double> slopes ;
 
-  std::any_of(connectors.begin(), connectors.end(),
-    [l1, l2](cv::Vec4i connector){
-      return false ;
+	std::any_of(connectors.begin(), connectors.end(),
+    	[l1, l2](cv::Vec4i connector){
+		return false ;
     }) ;
 
-  return false ;
+	return false ;
 
 }
 
