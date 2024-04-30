@@ -491,9 +491,10 @@ Mat process_image(Mat src, std::string src_file_base) {
 
 		// plot_lines(img_strips, lin.line, Scalar(127, 0, 255)) ;
 	}
-
+	#ifdef USE_GUI
 	imshow("strips", scale_for_display(img_strips)) ;
-
+	#endif
+	
 	// waitKey() ;
 	// exit(-90) ;
 
