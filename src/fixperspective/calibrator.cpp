@@ -17,12 +17,12 @@
 #include <opencv4/opencv2/highgui.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
 // #include <opencv4/opencv2/calib3d.hpp>
-#include <opencv4/opencv2/viz/types.hpp>
+// #include <opencv4/opencv2/viz/types.hpp>
 #else
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 // #include <opencv2/calib3d/calib3d.hpp>
-#include <opencv2/viz/types.hpp>
+// #include <opencv2/viz/types.hpp>
 #endif
 
 #include "detect.hpp" 
@@ -140,10 +140,10 @@ static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_al
     Mat fill(Size(img_edges_masked.cols, img_edges_masked.rows), CV_8UC3, cv::Scalar(31, 63, 127));
     fill.copyTo(img_edges_masked2, img_dense) ;
 
-    plot_lines(img_edges_masked2, lines_horiz, viz::Color::cyan()) ;
-    plot_lines(img_edges_masked2, lines_vert, viz::Color::magenta()) ;
-    plot_lines(img_edges_masked2, lines_horiz2, viz::Color::yellow()) ;
-    plot_lines(img_edges_masked2, lines_vert2, viz::Color::green()) ;
+    plot_lines(img_edges_masked2, lines_horiz, CYAN) ;
+    plot_lines(img_edges_masked2, lines_vert, MAGENTA) ;
+    plot_lines(img_edges_masked2, lines_horiz2, YELLOW) ;
+    plot_lines(img_edges_masked2, lines_vert2, GREEN) ;
     
 	//build vectors of ortho lines, so we can merge and detect skewed lines
 	std::vector<ortho_line> olines_horiz, olines_vert ;
@@ -164,14 +164,14 @@ static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_al
         merge_lines(olines_horiz, olines_merged_horiz, img_dense.rows / 2) ;
         merge_lines(olines_vert, olines_merged_vert, img_dense.cols / 2) ;
 
-        plot_lines(img_edges_masked2, olines_merged_horiz, viz::Color::red()) ;
-        plot_lines(img_edges_masked2, olines_merged_vert, viz::Color::blue()) ;
+        plot_lines(img_edges_masked2, olines_merged_horiz, RED) ;
+        plot_lines(img_edges_masked2, olines_merged_vert, BLUE) ;
 
         auto best_horiz = best_horizontal_lines(olines_horiz, src.cols * 2 / 3) ;
         auto best_vert  = best_vertical_lines(olines_vert, src.rows * 2 / 3) ;
 
-        plot_lines(img_edges_masked2, best_horiz, viz::Color::yellow(), 16) ;
-        plot_lines(img_edges_masked2, best_vert, viz::Color::green(), 16) ;
+        plot_lines(img_edges_masked2, best_horiz, YELLOW, 16) ;
+        plot_lines(img_edges_masked2, best_vert, GREEN, 16) ;
         
     }
     
@@ -189,10 +189,10 @@ static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_al
     std::cout << ", " << lines_vert.size() << " vlines" ;
     std::cout << std::endl ;
 
-	putText(img_edges_masked2, std::string("H:") + std::to_string(lines_horiz.size()), Point(100, 100), FONT_HERSHEY_SIMPLEX, 2, viz::Color::cyan(), 6) ;
-	putText(img_edges_masked2, std::string("V:") + std::to_string(lines_vert.size()), Point(100, 180), FONT_HERSHEY_SIMPLEX, 2, viz::Color::magenta(), 6) ;
-	putText(img_edges_masked2, std::string("H:") + std::to_string(lines_horiz2.size()), Point(100, 260), FONT_HERSHEY_SIMPLEX, 2, viz::Color::yellow(), 6) ;
-	putText(img_edges_masked2, std::string("V:") + std::to_string(lines_vert2.size()), Point(100, 340), FONT_HERSHEY_SIMPLEX, 2, viz::Color::green(), 6) ;
+	putText(img_edges_masked2, std::string("H:") + std::to_string(lines_horiz.size()), Point(100, 100), FONT_HERSHEY_SIMPLEX, 2, CYAN, 6) ;
+	putText(img_edges_masked2, std::string("V:") + std::to_string(lines_vert.size()), Point(100, 180), FONT_HERSHEY_SIMPLEX, 2, MAGENTA, 6) ;
+	putText(img_edges_masked2, std::string("H:") + std::to_string(lines_horiz2.size()), Point(100, 260), FONT_HERSHEY_SIMPLEX, 2, YELLOW, 6) ;
+	putText(img_edges_masked2, std::string("V:") + std::to_string(lines_vert2.size()), Point(100, 340), FONT_HERSHEY_SIMPLEX, 2, GREEN, 6) ;
 	// putText(img_edges_masked, "HELLO", Point(100 , 100), FONT_HERSHEY_SIMPLEX, 2, viz::Color::yellow(), 4) ;
 
     return img_edges_masked2 ;

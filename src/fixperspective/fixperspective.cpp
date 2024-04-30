@@ -13,12 +13,12 @@
 #include <opencv4/opencv2/highgui.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
 #include <opencv4/opencv2/calib3d.hpp>
-#include <opencv4/opencv2/viz/types.hpp>
+// #include <opencv4/opencv2/viz/types.hpp>
 #else
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
-#include <opencv2/viz/types.hpp>
+// #include <opencv2/viz/types.hpp>
 #endif
 
 #ifdef USE_EXIV2
@@ -370,8 +370,8 @@ Mat process_image(Mat src, std::string src_file_base) {
 		cvtColor(img_edges_masked, img_edges_masked, COLOR_GRAY2BGR) ;
 
 		#ifdef USE_GUI
-		plot_lines(img_edges_masked, horizontal_plines, viz::Color::yellow()) ;
-		plot_lines(img_edges_masked, vertical_plines, viz::Color::yellow()) ;
+		plot_lines(img_edges_masked, horizontal_plines, YELLOW) ;
+		plot_lines(img_edges_masked, vertical_plines, YELLOW) ;
 
 		// annotate_plines(img_edges_masked, horizontal_plines, Scalar(255, 255, 127)) ;
 		// annotate_plines(img_edges_masked, vertical_plines, Scalar(127, 255, 255)) ;
@@ -387,8 +387,8 @@ Mat process_image(Mat src, std::string src_file_base) {
 	#ifdef USE_GUI
 	if(!cmdopt_batch) {
 		cvtColor(img_dense_combined, img_dense_combined, COLOR_GRAY2BGR) ;
-		plot_lines(img_dense_combined, plines_combined_horizontal, viz::Color::magenta()) ;
-		plot_lines(img_dense_combined, plines_combined_vertical, viz::Color::magenta()) ;
+		plot_lines(img_dense_combined, plines_combined_horizontal, MAGENTA) ;
+		plot_lines(img_dense_combined, plines_combined_vertical, MAGENTA) ;
 
 		std::string label = "Blocks with unmerged lines, H:" + 
 			std::to_string(plines_combined_horizontal.size()) + ", V:" + 
@@ -524,14 +524,14 @@ Mat process_image(Mat src, std::string src_file_base) {
 		std::string label ;
 		
 		Mat img_merged_lines = Mat::zeros(img_gray.size(), CV_8UC3) ;
-		plot_lines(img_merged_lines, merged_horizontal_plines, viz::Color::cyan()) ;
-		plot_lines(img_merged_lines, merged_vertical_plines, viz::Color::magenta()) ;
+		plot_lines(img_merged_lines, merged_horizontal_plines, CYAN) ;
+		plot_lines(img_merged_lines, merged_vertical_plines, MAGENTA) ;
 		
 		auto img_merged_scaled = scale_for_display(img_merged_lines) ;
 		float scale = img_merged_scaled.cols * 1.0 / img_merged_lines.cols ;
 
-		annotate_plines(img_merged_scaled, merged_horizontal_plines, viz::Color::yellow(), scale) ;
-		annotate_plines(img_merged_scaled, merged_vertical_plines, viz::Color::yellow(), scale) ;
+		annotate_plines(img_merged_scaled, merged_horizontal_plines, YELLOW, scale) ;
+		annotate_plines(img_merged_scaled, merged_vertical_plines, YELLOW, scale) ;
 		
 		//Combining the merged lines image with the final 4 is probably not a good idea
 		//wee need a black background to discern unmerged close lines
@@ -544,8 +544,8 @@ Mat process_image(Mat src, std::string src_file_base) {
 		}
 
 		cvtColor(img_gray, img_gray, COLOR_GRAY2BGR) ;
-		plot_lines(img_gray, best_horizontals, viz::Color::cyan()) ;
-		plot_lines(img_gray, best_verticals, viz::Color::magenta()) ;
+		plot_lines(img_gray, best_horizontals, CYAN) ;
+		plot_lines(img_gray, best_verticals, MAGENTA) ;
 		imshow("Gray Original with best 4 bounds" , scale_for_display(img_gray)) ;
 
 		label = "👍 Corrected Image: " + src_file_base ;
