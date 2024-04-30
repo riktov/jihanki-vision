@@ -47,7 +47,7 @@ ortho_line::ortho_line(Vec4i lin)
 			this->line = Vec4i(lin[2], lin[3], lin[0], lin[1]) ;
 		}
 		if(this->slope == 0) {
-			this->zero_intercept = lin[1] ;	//or 3
+			this->zero_intercept = lin[1] ;	//or [3]
 		} else {
 			this->zero_intercept = lin[1] - (lin[0] / this->slope) ;
 		}
@@ -176,18 +176,19 @@ std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &pers_lines, 
 /**
  * @brief Merge a collection of lines into a new set of equal or fewer lines.
  * 
- * @param lines vector of lines
+ * @param lines input vector of lines
+ * @param merged output vector of lines
  * @param intercept where along the length of lines to compare the distance between lines
  * @param sort_by Sort input lines by angle or intercept, SORT_ANGLE or SORT_INTERCEPT
- * @return std::vector<ortho_line> 
  */
-std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercept, int sort_by) {
+void merge_lines(std::vector<ortho_line> &lines, std::vector<ortho_line> &merged, int intercept, int sort_by) {
 	const float ANGLE_DELTA = 1.5 ;
 	const float INTERCEPT_DELTA = 10 ;
 
 	if(lines.size() < 2) {
-		if(cmdopt_verbose) { std::cout << "Only one line; skipping merge" << std::endl ; }
-		return lines ;
+		// if(cmdopt_verbose) { std::cout << "Only one line; skipping merge" << std::endl ; }
+		merged.push_back(lines.at(0)) ;
+		return ;
 	}
 
 	std::sort(lines.begin(), lines.end(), 
@@ -198,8 +199,6 @@ std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercep
 			return pl1.intercept_at(intercept) < pl2.intercept_at(intercept) ;
 		}
 	}) ;
-
-	std::vector<ortho_line> merged ;
 
 	for(size_t i = 1 ; i < lines.size() ; i++) {
 		auto p_prev = lines.at(i - 1) ;
@@ -234,10 +233,18 @@ std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercep
 	}
 
 	if(lines.size() > merged.size()) {
-		return merge_lines(merged, intercept, sort_by) ;
+		std::vector<ortho_line> in, result ;
+
+		for(auto lin : merged) { in.push_back(lin) ; }
+
+		merge_lines(in, result, intercept, sort_by) ;
+
+		merged.clear() ;
+
+		for(auto lin : result) { merged.push_back(lin) ; }
 	}
 
-	return merged ;
+	// return merged ;
 }
 
 /**
@@ -478,5 +485,111 @@ ortho_line merge_combine_average(ortho_line lin1, ortho_line lin2) {
 		return ortho_line(cv::Vec4i(min_extent, min_offset, max_extent, max_offset)) ;
 	} else {
 		return ortho_line(cv::Vec4i(min_offset, min_extent, max_offset, max_extent)) ;
+	}
+}
+
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int min_space) {
+	//sort from longest to shortest
+	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
+		return len_sq(l1) > len_sq(l2) ;		
+	}) ;
+
+	Vec4i leftmost, rightmost ;
+	
+	if(mid_x(lines.at(0)) < mid_x(lines.at(1))) {
+		leftmost = lines.at(0) ;
+		rightmost = lines.at(1) ;
+	} else {
+		leftmost = lines.at(1) ;
+		rightmost = lines.at(0) ;
+	}
+
+	int space ;
+
+	for(auto lin : lines) {
+		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
+		if(mid_x(lin) < mid_x(leftmost)) {
+			leftmost = lin ;
+		}
+
+		if(mid_x(lin) > mid_x(rightmost)) {
+			rightmost = lin ;
+		}
+
+		space = mid_x(rightmost) - mid_x(leftmost) ;
+		if(space >= min_space) {
+			return std::make_pair(leftmost, rightmost) ;
+		}
+	}
+	return std::make_pair(leftmost, rightmost) ;
+}
+
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int min_space) {
+	//sorting from longest to shortest
+	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
+		return len_sq(l1) > len_sq(l2) ;		
+	}) ;
+
+	Vec4i topmost, bottommost ;
+	
+	if(mid_y(lines.at(0)) < mid_y(lines.at(1))) {
+		topmost = lines.at(0) ;
+		bottommost = lines.at(1) ;
+	} else {
+		topmost = lines.at(1) ;
+		bottommost = lines.at(0) ;
+	}
+
+	int space ;
+
+	for(auto lin : lines) {
+		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
+		if(mid_y(lin) < mid_y(topmost)) {
+			topmost = lin ;
+		}
+
+		if(mid_y(lin) > mid_y(topmost)) {
+			bottommost = lin ;
+		}
+
+		space = mid_y(bottommost) - mid_y(topmost) ;
+		if(space >= min_space) {
+			return std::make_pair(topmost, bottommost) ;
+		}
+	}
+	return std::make_pair(topmost, bottommost) ;
+}
+
+
+std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<ortho_line> plines, int min_space) {
+	std::vector<Vec4i> lines ;
+	for(auto plin : plines) {
+		lines.push_back(plin.line) ;
+	}
+	return best_vertical_lines(lines, min_space) ;
+}
+
+std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<ortho_line> plines, int min_space) {
+	std::vector<Vec4i> lines ;
+	for(auto plin : plines) {
+		lines.push_back(plin.line) ;
+	}
+	return best_horizontal_lines(lines, min_space) ;
+}
+
+/**
+ * @brief Separate a collection of lines into horizontals and verticals
+ * 
+ * @param lines 
+ * @param horizontals 
+ * @param verticals 
+ */
+void separate_lines(std::vector<Vec4i> lines, std::vector<Vec4i> &horizontals, std::vector<Vec4i> &verticals) {
+	for(auto lin :lines) {
+		if(std::abs(lin[0] - lin[2]) > std::abs(lin[1] - lin[3])) {
+			horizontals.push_back(lin) ;
+		} else {
+			verticals.push_back(lin) ;
+		}
 	}
 }

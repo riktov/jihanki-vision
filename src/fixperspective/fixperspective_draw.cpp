@@ -113,38 +113,34 @@ void plot_margins(Mat &img, Rect rc) {
  * @param img 
  * @param lines 
  */
-void plot_lines(Mat img, const std::vector<Vec4i> lines, Scalar color) {
+void plot_lines(Mat img, const std::vector<Vec4i> lines, Scalar color, int thickness) {
 	for(auto lin : lines) {
 		// std::cout << lin << std::endl ;
-		line(img, Point(lin[0], lin[1]), Point(lin[2], lin[3]), color, 4) ;
+		line(img, Point(lin[0], lin[1]), Point(lin[2], lin[3]), color, thickness) ;
 	}
 }
 
-void plot_lines(cv::Mat img, const std::vector<ortho_line> plines, cv::Scalar color) {
+void plot_lines(Mat img, const std::vector<ortho_line> plines, Scalar color, int thickness) {
 	std::vector<Vec4i> lines ;
-	/*
-	std::transform(plines.begin(), plines.end(), lines.begin(), [](perspective_line plin){
-		return plin.line ;
-	}) ;
-	*/
+
 	for(auto plin : plines) {
 		lines.push_back(plin.line) ;
 	}
-	plot_lines(img, lines, color) ;
+	plot_lines(img, lines, color, thickness) ;
 }
 
-void plot_lines(cv::Mat img, const std::pair<ortho_line, ortho_line> plines, cv::Scalar color) {
+void plot_lines(Mat img, const std::pair<ortho_line, ortho_line> plines, Scalar color, int thickness) {
 	std::vector<Vec4i> lines ;
 	lines.push_back(plines.first.line) ;	
 	lines.push_back(plines.second.line) ;
 
-	plot_lines(img, lines, color) ;	
+	plot_lines(img, lines, color, thickness) ;	
 }
 
-void plot_lines(cv::Mat img, Vec4i lin, cv::Scalar color) {
+void plot_lines(Mat img, Vec4i lin, Scalar color, int thickness) {
 	std::vector<Vec4i> lines ;
 	lines.push_back(lin) ;	
-	return plot_lines(img, lines, color) ;
+	return plot_lines(img, lines, color, thickness) ;
 }
 
 void annotate_plines(Mat img, const std::vector<ortho_line> plines, Scalar color, float scale = 1) {

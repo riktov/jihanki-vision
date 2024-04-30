@@ -52,8 +52,13 @@ struct ortho_line {
 
 void fill_perspective_lines(std::vector<ortho_line> &olines, std::vector<cv::Vec4i> lines) ;
 std::vector<ortho_line> merge_lines_binned(std::vector<ortho_line> &lines, bool is_horizontal, bool is_merged_only=false) ;
-std::vector<ortho_line> merge_lines(std::vector<ortho_line> &lines, int intercept = 0, int sort_by = SORT_ANGLE) ;
+void merge_lines(std::vector<ortho_line> &lines, std::vector<ortho_line> &merged, int intercept = 0, int sort_by = SORT_ANGLE) ;
 std::vector<ortho_line> filter_skewed_lines(std::vector<ortho_line> lines, int max_edge) ;
 ortho_line merge_combine_average(ortho_line pl1, ortho_line pl2) ;
 
+std::pair<cv::Vec4i, cv::Vec4i> best_vertical_lines(std::vector<cv::Vec4i> lines, int gap) ;
+std::pair<cv::Vec4i, cv::Vec4i> best_vertical_lines(std::vector<ortho_line> lines, int gap) ;
+std::pair<cv::Vec4i, cv::Vec4i> best_horizontal_lines(std::vector<cv::Vec4i> lines, int gap) ;
+std::pair<cv::Vec4i, cv::Vec4i> best_horizontal_lines(std::vector<ortho_line> lines, int gap) ;
 
+void separate_lines(std::vector<cv::Vec4i> lines, std::vector<cv::Vec4i> &horizontals, std::vector<cv::Vec4i> &verticals) ;

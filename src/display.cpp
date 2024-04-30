@@ -34,10 +34,21 @@ std::pair<int, int> screen_dims() {
     return std::make_pair(width, height) ;
 }
 
-Mat scale_for_display(Mat src, int width, int height) {
+Mat scale_for_display(Mat src, int screen_width, int screen_height) {
+    //TODO: we don't need to actually pyrDown for each step.
+    //just figure out how many times we need to then pass that power to resize
+    int target_width = src.cols ;
+    int target_height = src.rows ;
+    int factor_width = 1 ;
+    int factor_height = 1 ;
 
-    while(src.rows > height || src.cols > width) {
-        pyrDown(src, src, Size(src.cols/2 , src.rows/2)) ;
+    while(target_height > screen_height || target_width > screen_width) {
+        // factor_height *= 2 ;
+        // factor_width *= 2 ;
+        target_height /= 2 ;
+        target_width /= 2 ;
     }
+
+    resize(src, src, Size(target_width, target_height)) ;
     return src ;
 }

@@ -12,4 +12,4 @@
 void detect_dense_areas(cv::Mat img_edges, cv::Mat &img_out) ;
 void detect_dense_areas2(cv::Mat img_edges, cv::Mat &img_out) ;
 void detect_dense_areas_simple(cv::Mat img_edges, cv::Mat &img_out) ;
-std::vector<cv::Vec4i> detect_lines(cv::Mat img_cann, int accum = 300, int strip_offset = 0) ;
+void detect_lines(cv::Mat img_cann, std::vector<cv::Vec4i> &lines, int accum = 300, int strip_offset = 0) ;

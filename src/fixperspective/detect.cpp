@@ -25,7 +25,7 @@ extern bool cmdopt_verbose ;
  * @param img_edges Monochrome image with Canny edges
  * @return Mat 
  */
-void detect_dense_areas(Mat img_edges, Mat &img_out) {
+void detect_dense_areas_dilate(Mat img_edges, Mat &img_out) {
 	// Mat img_out = img_edges.clone();
 
 	const auto dilation_type = MORPH_ERODE ;
@@ -94,7 +94,8 @@ void detect_dense_areas2(Mat img_edges, Mat &img_out) {
 
 	// Mat img_out = img_edges.clone();
 
-	const int dilation_size = 5 ;
+	const int dilation_size = 3 ;
+
 	Mat kernel_dilate = getStructuringElement(MORPH_DILATE,
 						Size( 2*dilation_size + 1, 2*dilation_size+1 ),
 						Point( dilation_size, dilation_size ) );
@@ -104,26 +105,26 @@ void detect_dense_areas2(Mat img_edges, Mat &img_out) {
 						Point( dilation_size, dilation_size ) );
 
 
-	const int blockiness = 3;	//3
+	const int blockiness = 4;	//3
 
 	img_edges.copyTo(img_out) ;
 
 	for(int i = 0 ; i <  blockiness ; i++) {
+		dilate(img_out, img_out, kernel_dilate, Point(-1, -1), 1);
 		pyrDown(img_out, img_out);
 	}
 
 	// blur(img_out, img_out, Size(3, 3)) ;
 	// threshold(img_out, img_out, 191, 255, THRESH_BINARY) ;
-	dilate(img_out, img_out, kernel_dilate, Point(-1, -1), 1);
-	erode(img_out, img_out, kernel_erode, Point(-1, -1), 3);
 
 	for(int i = 0 ; i <  blockiness ; i++) {
 		pyrUp(img_out, img_out);
+		erode(img_out, img_out, kernel_erode, Point(-1, -1), 1);
 	}
 
-	erode(img_out, img_out, kernel_erode, Point(-1, -1), 2);
+	// erode(img_out, img_out, kernel_erode, Point(-1, -1), 2);
 
-	threshold(img_out, img_out, 1, 255, THRESH_BINARY) ;
+	// threshold(img_out, img_out, 1, 255, THRESH_BINARY) ;
 
 }
 
@@ -140,18 +141,31 @@ void detect_dense_areas_simple(Mat img_edges, Mat &img_out) {
 
 	img_edges.copyTo(img_out) ;
 
+	//When we pyrDown, a region of 2 pixels width, one 1 and one 0, will become 
+	//1 pixel wide, with value 0.5. 
+	// We threshold that up to a value of 1, so when we pyrUp again, it will become 
+	//2 pixels wide, both value 1. Effectively dilation.
+	//calling threshold() before pyrDown() will cause over-dilation
+ 
 	for(int i = 0 ; i <  blockiness ; i++) {
 		// blur(img_out, img_out, Size(3, 3)) ;
-		threshold(img_out, img_out, 15, 255, THRESH_BINARY) ;
+		threshold(img_out, img_out, 1, 255, THRESH_BINARY) ;	//5
 		pyrDown(img_out, img_out);
 	}
 
-	blur(img_out, img_out, Size(3, 3)) ;
-	threshold(img_out, img_out, 208, 255, THRESH_BINARY) ;
+	// blur(img_out, img_out, Size(3, 3)) ;
+	// threshold(img_out, img_out, 207, 255, THRESH_BINARY) ;
+
+	//When we pyrUp, a region of 1 pixel width will become 
+	//2 pixels wide, both with the same value as the 1 pixel in the input image. 
+	//In the original full-size image, the edge within that region (which may have been 32 pixels wide)
+	// was somewhere between them.
+	// We threshold that down from 245 so that pixels that most of the pixels
+	// in that edge region are set to 0. Effectively erosion.
 
 	for(int i = 0 ; i <  blockiness ; i++) {
 		pyrUp(img_out, img_out);
-		threshold(img_out, img_out, 207, 255, THRESH_BINARY) ;
+		threshold(img_out, img_out, 254, 255, THRESH_BINARY) ;	//245
 	}
 
 	resize(img_out, img_out, img_edges.size()) ;
@@ -187,46 +201,30 @@ void xxdetect_dense_areas_simple(Mat img_edges, Mat &img_out) {
  * 
  * @param img_cann image with edges
  * @param strip_offset ??
- * @return std::vector<Vec4i> 
+ * @return int number of lines detected 
  */
-std::vector<Vec4i> detect_lines(Mat img_edges, int threshold, int strip_offset) {
-	// Mat cann ;
-	std::vector<Vec4i> lines ;
-	
+void detect_lines(Mat img_edges, std::vector<Vec4i> &lines, int threshold, int strip_offset) {	
 	// const int hough_threshold = 400 ;	//250, 200 300 - 400
 	//with new algorithm, raising max_gap to 100 helps
 
-	bool is_vertical = img_edges.rows > img_edges.cols ;
+	bool is_image_portrait = img_edges.rows > img_edges.cols ;
 
 	const int min_vertical_length = img_edges.rows / 3 ; //4
 	const int min_horizontal_length = img_edges.cols / 3 ; //6, 10
 
-	const int min_length = is_vertical ? min_horizontal_length : min_vertical_length ;
-	const int max_gap = min_length / 6 ; //70
+	const int min_line_length = is_image_portrait ? min_horizontal_length : min_vertical_length ;
+	const int max_gap = min_line_length / 10 ; //6
 
 	//HoughLinesP(img_cann, lines, 1, CV_PI/45, threshold, min_length, max_gap) ;
-	// medianBlur(img_cann, img_cann, 5) ;
+	//medianBlur(img_cann, img_cann, 5) ;
     const auto theta = CV_PI/180 ;
 
-	HoughLinesP(img_edges, lines, 1, theta, threshold, min_length, max_gap) ;
+	HoughLinesP(img_edges, lines, 1, theta, threshold, min_line_length, max_gap) ;
 
-	int num_all_detected = -1 ;
-	if(cmdopt_verbose) {
-		num_all_detected = lines.size() ;
-	}
-	
 	//remove diagonal lines
-
 	auto slant_iter = std::remove_if(lines.begin(), lines.end(),
 		[](Vec4i lin){ return slant(lin) > 0.1 ; }) ;	// about 10 degrees
 	lines.erase(slant_iter, lines.end()) ;
-
-	if(cmdopt_verbose) {
-		// int num_filtered = lines.size() ;
-		// std::cout << num_all_detected - num_filtered << " diagonals removed." << std::endl ;
-	}
-
-	return lines ;
 }
 
 /**

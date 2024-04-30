@@ -42,7 +42,10 @@
 #include "../display.hpp"
 #endif
 
-
+const int ERR_PROCESSFILE_IMAGE_FAIL = -16 ;
+const int ERR_PROCESSFILE_NO_DESTFILE = -17 ;
+const int ERR_PROCESSFILE_EXIF_FAIL = -18 ;
+const int ERR_PROCESSFILE_NO_INPUT = -19 ;
 
 //#define VERBOSE_MESSAGE(msg) if(cmdopt_verbose) { std::cout << msg ;}
 
@@ -61,10 +64,6 @@ inline Mat transform_perspective(Mat img, const std::vector<Vec4i>lines_tblr) {
 // std::vector<Vec4i> detect_bounding_lines_iterate_scale(const Mat img_src) ;
 std::vector<Point2f> line_corners(Vec4i top, Vec4i bottom, Vec4i left, Vec4i right) ;
 Rect rect_within_image(Mat img, Mat corrected_img, std::vector<Point2f> src_quad_pts, std::vector<Point2f> dst_rect_pts) ;
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int gap) ;
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<ortho_line> lines, int gap) ;
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int gap) ;
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<ortho_line> lines, int gap) ;
 Rect trim_dense_edges(Mat src) ;
 
 #ifdef USE_EXIV2
@@ -175,7 +174,10 @@ int main(int argc, char **argv) {
 		}
 	
 		// std::cout << filename << std::endl ;
-		process_file(filename, dest_path.str().c_str()) ;
+		auto result = process_file(filename, dest_path.str().c_str()) ;
+		if(result) {
+			std::cerr << "Failed at processing " << filename << std::endl ;
+		}
 	}
 }
 
@@ -191,7 +193,7 @@ int process_file(char *filename, const char *dest_file) {
 
 	if(src.empty()) {
 		std::cerr << "Input file is empty: " << filename << std::endl ;
-		return -1 ;
+		return ERR_PROCESSFILE_NO_INPUT ;
 	}
 
 	if(cmdopt_verbose) {
@@ -202,22 +204,27 @@ int process_file(char *filename, const char *dest_file) {
 	Mat img_result = process_image(src, filenamestr) ;
 
 	if(img_result.empty()) {
-		return -2 ;
+		return ERR_PROCESSFILE_IMAGE_FAIL ;
 	}
 
 	if(!cmdopt_nowrite) {
 		if(cmdopt_verbose) {
 			std::cout << "Writing to:[" << dest_file << "]" << std::endl ;
 		}
-		try {
-			imwrite(dest_file, img_result) ;
-			#ifdef USE_EXIV2
-			copy_exif(filename, dest_file) ;
-			#endif
-		} catch (std::runtime_error& ex) {
-		fprintf(stderr, "Could not write output file: %s\n", ex.what());
-			return 1;
+
+		auto result_imwrite = imwrite(dest_file, img_result) ;
+		if(!result_imwrite) { 
+			std::cerr << "Could not write image data to " << dest_file << std::endl ;
+			return ERR_PROCESSFILE_NO_DESTFILE ; 
+		} ;
+
+		#ifdef USE_EXIV2
+		auto result_copy_exif = copy_exif(filename, dest_file) ;
+		if(!result_copy_exif) { 
+			std::cerr << "Could not write EXIF to " << dest_file << std::endl ;
+			return ERR_PROCESSFILE_EXIF_FAIL ; 
 		}
+		#endif
 	}
 
 	return 0 ;
@@ -299,7 +306,7 @@ Mat process_image(Mat src, std::string src_file_base) {
 		img.copyTo(img_edges_combined, img) ;	//only for denseblock mask
 	}
 
-	detect_dense_areas(img_edges_combined, img_dense_combined) ;
+	detect_dense_areas_simple(img_edges_combined, img_dense_combined) ;
 
 	bitwise_not(img_dense_combined, img_dense_combined) ;
 
@@ -328,11 +335,10 @@ Mat process_image(Mat src, std::string src_file_base) {
 			img_edges_masked = img.clone() ;
 		}
 
-		auto lines = detect_lines(img_edges_masked, 0) ;	//aready removes diagonals
+		std::vector<Vec4i> lines, horizontal_lines, vertical_lines ;
 
-		//Separate into vertical and horizontal
-		std::vector<Vec4i> horizontal_lines, vertical_lines ;
-		
+		detect_lines(img_edges_masked, lines, 0) ;	//aready removes diagonals
+
 		std::copy_if(lines.begin(), lines.end(), std::back_inserter(horizontal_lines), [](Vec4i lin){
 			return std::abs(lin[0] - lin[2]) > std::abs(lin[1] - lin[3]) ;
 		}) ;
@@ -413,14 +419,24 @@ Mat process_image(Mat src, std::string src_file_base) {
 		std::cout << "Merging collinears" << std::endl ;
 		std::cout << " - horizontal" << std::endl ;
 	}
-	auto merged_horizontal_plines = merge_lines(plines_combined_horizontal, img_gray.cols / 2, SORT_INTERCEPT) ;
-	merged_horizontal_plines = merge_lines(merged_horizontal_plines, img_gray.cols / 2, SORT_ANGLE) ;
+
+	std::vector<ortho_line> merged_horizontal_plines_inter, merged_horizontal_plines_angle ;
+
+	merge_lines(plines_combined_horizontal, merged_horizontal_plines_inter, img_gray.cols / 2, SORT_INTERCEPT) ;
+	merge_lines(merged_horizontal_plines_inter, merged_horizontal_plines_angle, img_gray.cols / 2, SORT_ANGLE) ;
+
+	auto merged_horizontal_plines = merged_horizontal_plines_angle ;
 
 	if(cmdopt_verbose) {
 		std::cout << " - vertical" << std::endl ;
 	}
-	auto merged_vertical_plines = merge_lines(plines_combined_vertical, img_gray.rows / 2, SORT_INTERCEPT) ;
-	merged_vertical_plines = merge_lines(merged_vertical_plines, img_gray.rows / 2, SORT_ANGLE) ;
+
+	std::vector<ortho_line> merged_vertical_plines_inter, merged_vertical_plines_angle ;
+
+	merge_lines(plines_combined_vertical, merged_vertical_plines_inter, img_gray.rows / 2, SORT_INTERCEPT) ;
+	merge_lines(merged_vertical_plines_inter, merged_vertical_plines_angle, img_gray.rows / 2, SORT_ANGLE) ;
+
+	auto merged_vertical_plines = merged_vertical_plines_angle ;
 
 	std::cout << "Horiz plines after merged: " << merged_horizontal_plines.size() << std::endl ;
 	std::cout << "Vert plines after merged: " << merged_vertical_plines.size() << std::endl ;
@@ -543,7 +559,7 @@ Mat process_image(Mat src, std::string src_file_base) {
 	}
 	#endif
 
-	std::cout << "Finished processing: " << src_file_base << std::endl ;
+	std::cout << "process_image() : Finished processing: " << src_file_base << std::endl ;
 
 	return img_transformed ;
 }
@@ -916,94 +932,6 @@ std::pair<Vec4i, Vec4i> topmost_bottommost_lines_iter(std::vector<Vec4i> lines, 
 */
 
 
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<Vec4i> lines, int min_space) {
-	//sort from longest to shortest
-	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
-		return len_sq(l1) > len_sq(l2) ;		
-	}) ;
-
-	Vec4i leftmost, rightmost ;
-	
-	if(mid_x(lines.at(0)) < mid_x(lines.at(1))) {
-		leftmost = lines.at(0) ;
-		rightmost = lines.at(1) ;
-	} else {
-		leftmost = lines.at(1) ;
-		rightmost = lines.at(0) ;
-	}
-
-	int space ;
-
-	for(auto lin : lines) {
-		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
-		if(mid_x(lin) < mid_x(leftmost)) {
-			leftmost = lin ;
-		}
-
-		if(mid_x(lin) > mid_x(rightmost)) {
-			rightmost = lin ;
-		}
-
-		space = mid_x(rightmost) - mid_x(leftmost) ;
-		if(space >= min_space) {
-			return std::make_pair(leftmost, rightmost) ;
-		}
-	}
-	return std::make_pair(leftmost, rightmost) ;
-}
-
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<Vec4i> lines, int min_space) {
-	//sorting from longest to shortest
-	std::sort(lines.begin(), lines.end(), [](Vec4i l1, Vec4i l2){
-		return len_sq(l1) > len_sq(l2) ;		
-	}) ;
-
-	Vec4i topmost, bottommost ;
-	
-	if(mid_y(lines.at(0)) < mid_y(lines.at(1))) {
-		topmost = lines.at(0) ;
-		bottommost = lines.at(1) ;
-	} else {
-		topmost = lines.at(1) ;
-		bottommost = lines.at(0) ;
-	}
-
-	int space ;
-
-	for(auto lin : lines) {
-		// std::cout << "Line length: " << len_sq(lin) << std::endl ;
-		if(mid_y(lin) < mid_y(topmost)) {
-			topmost = lin ;
-		}
-
-		if(mid_y(lin) > mid_y(topmost)) {
-			bottommost = lin ;
-		}
-
-		space = mid_y(bottommost) - mid_y(topmost) ;
-		if(space >= min_space) {
-			return std::make_pair(topmost, bottommost) ;
-		}
-	}
-	return std::make_pair(topmost, bottommost) ;
-}
-
-
-std::pair<Vec4i, Vec4i> best_vertical_lines(std::vector<ortho_line> plines, int min_space) {
-	std::vector<Vec4i> lines ;
-	for(auto plin : plines) {
-		lines.push_back(plin.line) ;
-	}
-	return best_vertical_lines(lines, min_space) ;
-}
-
-std::pair<Vec4i, Vec4i> best_horizontal_lines(std::vector<ortho_line> plines, int min_space) {
-	std::vector<Vec4i> lines ;
-	for(auto plin : plines) {
-		lines.push_back(plin.line) ;
-	}
-	return best_horizontal_lines(lines, min_space) ;
-}
 
 /**
  * @brief Return a rectangle that excludes busy areas on the sides
@@ -1056,7 +984,7 @@ Rect trim_dense_edges(Mat src) {
 	for(auto img : channel_images_edges) {
 		img.copyTo(img_edges_combined, img) ;	//only for denseblock mask
 	}
-	detect_dense_areas(img_edges_combined, img_dense_combined) ;
+	detect_dense_areas_simple(img_edges_combined, img_dense_combined) ;
 	bitwise_not(img_dense_combined, img_dense_combined) ;
 
 

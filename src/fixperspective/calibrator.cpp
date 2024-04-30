@@ -35,87 +35,24 @@ const char *window_name = "Calibrator" ;
 
 bool cmdopt_verbose = true ;
 
+const int IMAGE_MIN_DIM_TYPICAL = 2500 ;
+const float CANNY_THRESH_RATIO = 2.5 ;
+
+
 using namespace cv ;
 
 Mat g_src, result ;
 
-static Mat get_lines(Mat src, int canny1, int hough_threshold, int block_algo, Mat mask) {
-    return Mat() ;
-}
+static void get_lines(Mat img_gray, std::vector<Vec4i> &lines, int canny1, int hough_threshold, int block_algo, Mat &img_mask) {
+    Mat img_edges, img_edges_masked ;
+    int canny2 = canny1 * CANNY_THRESH_RATIO ;
 
-static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_algo) {
-    // std::cout << iterations << std::endl ;
-
-    const int IMAGE_MIN_DIM_TYPICAL = 2500 ;
-    const float CANNY_THRESH_RATIO = 2.5 ;
-
-    //general data on the image
-    float img_size_factor = min(src.rows, src.cols) * 1.0 / IMAGE_MIN_DIM_TYPICAL ;
-
-
-    Mat img_gray, img_edges, img_dense, img_edges_masked, img_dense_combined ;
-
-    cvtColor(src, img_gray, COLOR_BGR2GRAY) ;
-
-    Mat vec_gray ;
-    reduce(img_gray, vec_gray, 0, REDUCE_AVG) ;
-    
-    auto mean_img_value = mean(vec_gray)[0] ;
-    std::cout << "grey image mean value:" << mean_img_value << std::endl ;
-
-
-    // const int MAX_PASSES = 1 ;
-    std::vector<Vec4i> lines_horiz, lines_vert ;
-
-    // int pass = 0 ;
-
-    auto canny2 = canny1 * CANNY_THRESH_RATIO ;
-
-    blur(img_gray, img_gray, Size(3, 3)) ;
-
-    //this is just for the dense mask
-    Canny(img_gray, img_edges, 20, 60) ; 
-    
-    // img_dense = Mat(img_edges.size(), 0) ;
-
-  // Start measuring time
-  /*
-    auto begin = std::chrono::high_resolution_clock::now();
- 
-    if(block_algo == 1) {
-        detect_dense_areas(img_edges, img_dense) ;
-    } else {
-        detect_dense_areas_simple(img_edges, img_dense) ;
-    }
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
-    
-    if(block_algo == 1) {
-        printf("Blocking algorithm: erode/dilate\n");
-    } else {
-        printf("Blocking algorithm: simple\n" );
-    }
-
-    printf("%.3f seconds.\n", elapsed.count() * 1e-9);
-    */
-
-    detect_dense_areas(img_edges, img_dense) ;
-
-    bitwise_not(img_dense, img_dense) ;
-
-    //scale the hough_threshold to minimum dimension of image
-    hough_threshold = hough_threshold * img_size_factor ;
-
-
-
-
-    //PASS #1
     Canny(img_gray, img_edges, canny1, canny2) ; 
 
     //img_dense might be enlarged by the pyrUp/Down, so it should be trimmed somewhere before this.
-    img_edges.copyTo(img_edges_masked, img_dense) ;
+    img_edges.copyTo(img_edges_masked, img_mask) ;
    
+    /*
     auto lines = detect_lines(img_edges_masked, hough_threshold, 0) ;
 
     std::copy_if(lines.begin(), lines.end(), std::back_inserter(lines_horiz), [](Vec4i lin){
@@ -125,8 +62,56 @@ static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_al
     std::copy_if(lines.begin(), lines.end(), std::back_inserter(lines_vert), [](Vec4i lin){
         return std::abs(lin[0] - lin[2]) < std::abs(lin[1] - lin[3]) ;
     }) ;
+    */
+}
+
+static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_algo) {
+    //declarations of images we use
+    Mat img_gray, img_edges, img_dense, img_edges_masked, img_dense_combined ;
+
+    //adjustments for image size
+    float img_size_factor = min(src.rows, src.cols) * 1.0 / IMAGE_MIN_DIM_TYPICAL ;
+
+    cvtColor(src, img_gray, COLOR_BGR2GRAY) ;
+
+    /*
+    Mat vec_gray ;
+    reduce(img_gray, vec_gray, 0, REDUCE_AVG) ;
+    auto mean_img_value = mean(vec_gray)[0] ;
+    std::cout << "grey image mean value:" << mean_img_value << std::endl ;
+    */
+
+    auto canny2 = canny1 * CANNY_THRESH_RATIO ;
+
+    blur(img_gray, img_gray, Size(3, 3)) ;
+
+    //this is just for the dense mask
+    Canny(img_gray, img_edges, 20, 60) ; 
     
-    //PASS 2
+    detect_dense_areas_simple(img_edges, img_dense) ;
+    // detect_dense_areas2(img_edges, img_dense) ;
+    bitwise_not(img_dense, img_dense) ;
+
+    //scale the hough_threshold to dimension of image
+    hough_threshold = hough_threshold * img_size_factor ;
+
+
+    //PASS #1
+
+    Canny(img_gray, img_edges, canny1, canny2) ; 
+
+    //mask the edges image with the dense block
+    img_edges.copyTo(img_edges_masked, img_dense) ;
+   
+    std::vector<Vec4i>lines, lines_horiz, lines_vert ;
+    detect_lines(img_edges_masked, lines, hough_threshold, 0) ;
+
+    //add the areas under lines to the existing dense block, so subsequent passes can avoid them
+    for(auto lin: lines) { line(img_dense, Point(lin[0], lin[1]), Point(lin[2], lin[3]), Scalar(0), 4) ; }
+
+    separate_lines(lines, lines_horiz, lines_vert) ;
+    
+    //PASS # 2
     //modify the parameters
     canny1 = canny1 * 5 / 6 ;
     canny2 = canny2 * 5 / 6 ;
@@ -137,46 +122,64 @@ static Mat generate_image(Mat src, int canny1, int hough_threshold, int block_al
     //create a new edges image
     Canny(img_gray, img_edges2, canny1, canny2) ; 
 
-    //add the areas under the first-pass lines to the existing dense mask
-    for(auto lin: lines_horiz) {
-        line(img_dense, Point(lin[0], lin[1]), Point(lin[2], lin[3]), Scalar(0), 4) ;
-    }
-    for(auto lin: lines_vert) {
-        line(img_dense, Point(lin[0], lin[1]), Point(lin[2], lin[3]), Scalar(0), 4) ;
-    }
-
     img_edges2.copyTo(img_edges_masked2, img_dense) ;
 
-    lines = detect_lines(img_edges_masked2, hough_threshold, 0) ;
+    std::vector<Vec4i> lines2, lines_horiz2, lines_vert2 ;
+    detect_lines(img_edges_masked2, lines2, hough_threshold, 0) ;
 
-    std::vector<Vec4i> lines_horiz2, lines_vert2 ;
-    std::copy_if(lines.begin(), lines.end(), std::back_inserter(lines_horiz2), [](Vec4i lin){
-        return std::abs(lin[0] - lin[2]) > std::abs(lin[1] - lin[3]) ;
-    }) ;
+    separate_lines(lines2, lines_horiz2, lines_vert2) ;
 
-    std::copy_if(lines.begin(), lines.end(), std::back_inserter(lines_vert2), [](Vec4i lin){
-        return std::abs(lin[0] - lin[2]) < std::abs(lin[1] - lin[3]) ;
-    }) ;
+    //end of line detection
 
-    //end of pass
-
-
-    //reverse the mask to show it 
-    bitwise_not(img_dense, img_dense) ;
-    
     cvtColor(img_edges_masked2, img_edges_masked2, COLOR_GRAY2BGR) ;
 
-    
-    //put the block mask in dark green
-    Mat fill(Size(img_edges_masked.cols, img_edges_masked.rows), CV_8UC3, cv::Scalar(63, 127, 127));
-    // fill.copyTo(img_edges_masked, img_dense) ;
 
-    
+    //put the block mask in dark yellow
+    //reverse the mask to show it 
+    bitwise_not(img_dense, img_dense) ;    
+    Mat fill(Size(img_edges_masked.cols, img_edges_masked.rows), CV_8UC3, cv::Scalar(31, 63, 127));
+    fill.copyTo(img_edges_masked2, img_dense) ;
+
     plot_lines(img_edges_masked2, lines_horiz, viz::Color::cyan()) ;
     plot_lines(img_edges_masked2, lines_vert, viz::Color::magenta()) ;
     plot_lines(img_edges_masked2, lines_horiz2, viz::Color::yellow()) ;
     plot_lines(img_edges_masked2, lines_vert2, viz::Color::green()) ;
     
+	//build vectors of ortho lines, so we can merge and detect skewed lines
+	std::vector<ortho_line> olines_horiz, olines_vert ;
+		
+	for(auto lin : lines_horiz) { olines_horiz.push_back(ortho_line(lin)) ; }
+	for(auto lin : lines_vert) { olines_vert.push_back(ortho_line(lin)) ; }
+	for(auto lin : lines_horiz2) { olines_horiz.push_back(ortho_line(lin)) ; }
+	for(auto lin : lines_vert2) { olines_vert.push_back(ortho_line(lin)) ; }
+
+    std::vector<ortho_line> olines_merged_horiz, olines_merged_vert ;
+
+
+
+    if(olines_horiz.size() < 2 || olines_vert.size() < 2) {
+        std::cout << "Not enough lines before merge" << std::endl ;
+    } else {
+        
+        merge_lines(olines_horiz, olines_merged_horiz, img_dense.rows / 2) ;
+        merge_lines(olines_vert, olines_merged_vert, img_dense.cols / 2) ;
+
+        plot_lines(img_edges_masked2, olines_merged_horiz, viz::Color::red()) ;
+        plot_lines(img_edges_masked2, olines_merged_vert, viz::Color::blue()) ;
+
+        auto best_horiz = best_horizontal_lines(olines_horiz, src.cols * 2 / 3) ;
+        auto best_vert  = best_vertical_lines(olines_vert, src.rows * 2 / 3) ;
+
+        plot_lines(img_edges_masked2, best_horiz, viz::Color::yellow(), 16) ;
+        plot_lines(img_edges_masked2, best_vert, viz::Color::green(), 16) ;
+        
+    }
+    
+    
+
+
+    
+
 
  
     std::cout << canny1 ;
@@ -317,6 +320,7 @@ int main(int argc, char *argv[]) {
                     g_src = m_src ;
                     cb_calib(0, m_images) ;
                     break ;
+                case ' ':
                 case 'r':
                     m_src = load_file_in_list(filelist, rand() % num_dirents) ;
                     g_src = m_src ;
